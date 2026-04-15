@@ -434,25 +434,36 @@ def main():
                 debug_dir = pathlib.Path("debug")
                 debug_dir.mkdir(exist_ok=True)
 
-                # Snapshot the home/list page
-                page.screenshot(path=str(debug_dir / "page.png"), full_page=True)
-                (debug_dir / "page.html").write_text(page.content(), encoding="utf-8")
-                log.info("Home snapshot saved to debug/page.png and debug/page.html")
+                # Navigate directly to a known file and snapshot the Transcript tab
+                file_url = "https://web.plaud.ai/file/8b0e55e6c07fa8e803362e4563124ff2"
+                log.info("Navigating to file detail page...")
+                page.goto(file_url, timeout=PAGE_LOAD_TIMEOUT_MS)
+                page.wait_for_load_state("networkidle", timeout=PAGE_LOAD_TIMEOUT_MS)
+                page.wait_for_timeout(2000)
 
-                # Snapshot the first file's detail page
-                files = collect_all_file_ids(page)
-                if files:
-                    url_pattern = discover_url_pattern(page, files[0]["id"])
-                    first_id = files[0]["id"]
-                    if url_pattern:
-                        page.goto(url_pattern.format(file_id=first_id), timeout=PAGE_LOAD_TIMEOUT_MS)
-                    else:
-                        navigate_to_file(page, first_id, None)
+                # Dismiss any popups
+                for dismiss_sel in [
+                    "button:has-text('Maybe later')",
+                    "button:has-text('Close')",
+                    "[aria-label='Close']",
+                    "button:has-text('Accept')",
+                ]:
+                    try:
+                        page.click(dismiss_sel, timeout=2000)
+                    except PWTimeoutError:
+                        pass
+
+                # Click the Transcript tab
+                try:
+                    page.click("button:has-text('Transcript'), [role='tab']:has-text('Transcript')", timeout=5000)
                     page.wait_for_load_state("networkidle", timeout=PAGE_LOAD_TIMEOUT_MS)
-                    page.wait_for_timeout(2000)  # let JS render fully
-                    page.screenshot(path=str(debug_dir / "file.png"), full_page=True)
-                    (debug_dir / "file.html").write_text(page.content(), encoding="utf-8")
-                    log.info("File detail snapshot saved to debug/file.png and debug/file.html")
+                    page.wait_for_timeout(1500)
+                except PWTimeoutError:
+                    log.warning("Could not click Transcript tab")
+
+                page.screenshot(path=str(debug_dir / "file.png"), full_page=True)
+                (debug_dir / "file.html").write_text(page.content(), encoding="utf-8")
+                log.info("File detail snapshot saved to debug/file.png and debug/file.html")
                 return
 
             EXPORT_DIR.mkdir(parents=True, exist_ok=True)
