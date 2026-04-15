@@ -267,25 +267,33 @@ def navigate_to_file(page, file_id, url_pattern):
 # ---------------------------------------------------------------------------
 
 def ensure_transcript_generated(page, title, index, total):
-    """On the file detail page, generate transcript if not already done."""
+    """
+    On the file detail page, make sure the transcript exists.
+    The Transcript tab is the default view, so we only need to act
+    if a Generate/Transcribe button is visible.
+    """
     dismiss_popups(page)
 
-    # Click the Transcript tab (data-testid="tab-transcript-item")
+    # Ensure Transcript tab is active (it usually is by default)
     try:
-        page.click("[data-testid='tab-transcript-item']", timeout=8_000)
-        page.wait_for_load_state("networkidle", timeout=PAGE_LOAD_TIMEOUT_MS)
-        page.wait_for_timeout(1_000)
+        tab = page.locator("[data-testid='tab-transcript-item']").first
+        if tab.is_visible(timeout=3_000):
+            # Only click if it isn't already active
+            if "is-active" not in (tab.get_attribute("class") or ""):
+                tab.click()
+                page.wait_for_load_state("networkidle", timeout=PAGE_LOAD_TIMEOUT_MS)
+                page.wait_for_timeout(800)
     except PWTimeoutError:
-        log.warning("[%d/%d] Could not click Transcript tab for '%s'", index + 1, total, title)
+        pass
 
-    # Look for a Generate/Transcribe button
+    # Check if transcript needs to be generated
     generate_btn = page.locator(
         "button:has-text('Generate'), button:has-text('Transcribe'), "
         "button:has-text('Create Transcript')"
     ).first
 
     try:
-        btn_visible = generate_btn.is_visible(timeout=3_000)
+        btn_visible = generate_btn.is_visible(timeout=2_000)
     except PWTimeoutError:
         btn_visible = False
 
@@ -293,10 +301,9 @@ def ensure_transcript_generated(page, title, index, total):
         log.info("[%d/%d] Generating transcript for '%s'...", index + 1, total, title)
         generate_btn.click()
         try:
+            # Wait for the "Copy & export" button to appear — signals transcript is ready
             page.wait_for_selector(
-                "[class*='transcript-content'], [class*='transcriptContent'], "
-                "[class*='transcript-item'], [class*='transcriptItem'], "
-                "[class*='utterance'], [class*='segment']",
+                "[aria-label='Copy & export'], [title='Copy & export']",
                 timeout=TRANSCRIPT_GENERATION_TIMEOUT_MS,
             )
             log.info("[%d/%d] Transcript ready", index + 1, total)
@@ -316,98 +323,63 @@ def ensure_transcript_generated(page, title, index, total):
 # ---------------------------------------------------------------------------
 
 def export_transcript(page, label, index, total):
-    """Export transcript via download button, or scrape visible text."""
+    """
+    Export transcript using the toolbar flow:
+      1. Click "Copy & export" button
+      2. Click "Export transcript" in dropdown
+      3. Click "Export" in the modal → triggers download
+    """
     EXPORT_DIR.mkdir(parents=True, exist_ok=True)
 
-    # --- Try the share/export toolbar button (data-testid="share-button") ---
-    share_btn = page.locator("[data-testid='share-button']").first
+    # Step 1: click the "Copy & export" toolbar button
+    copy_export_btn = page.locator(
+        "[aria-label='Copy & export'], [title='Copy & export']"
+    ).first
     try:
-        btn_visible = share_btn.is_visible(timeout=3_000)
+        copy_export_btn.wait_for(state="visible", timeout=8_000)
     except PWTimeoutError:
-        btn_visible = False
-
-    if btn_visible:
-        try:
-            with page.expect_download(timeout=30_000) as dl_info:
-                share_btn.click()
-                page.wait_for_timeout(500)
-                # Look for a Download / Export option in the dropdown
-                for opt_sel in [
-                    f"li:has-text('{TRANSCRIPT_FORMAT.upper()}')",
-                    "li:has-text('Download')",
-                    "li:has-text('Export')",
-                    f"[data-testid*='export']:has-text('{TRANSCRIPT_FORMAT.upper()}')",
-                    "[data-testid*='download']",
-                ]:
-                    try:
-                        opt = page.locator(opt_sel).first
-                        if opt.is_visible(timeout=2_000):
-                            opt.click()
-                            break
-                    except PWTimeoutError:
-                        pass
-
-            dl = dl_info.value
-            ext = (
-                dl.suggested_filename.rsplit(".", 1)[-1]
-                if "." in dl.suggested_filename
-                else TRANSCRIPT_FORMAT
-            )
-            dest = EXPORT_DIR / f"{label}.{ext}"
-            dl.save_as(dest)
-            log.info("[%d/%d] Saved (download) → %s", index + 1, total, dest)
-            return True
-        except PWTimeoutError:
-            log.warning("[%d/%d] Download timed out; falling back to text scrape", index + 1, total)
-            # Close any open dropdown before scraping
-            try:
-                page.keyboard.press("Escape")
-            except Exception:
-                pass
-
-    # --- Fallback: scrape visible transcript text ---
-    log.info("[%d/%d] Scraping transcript text for '%s'", index + 1, total, label)
-
-    # Try progressively broader selectors for the transcript content
-    TRANSCRIPT_CONTENT_SELECTORS = [
-        # Plaud-specific data-testid patterns
-        "[data-testid*='transcript-item']",
-        "[data-testid*='utterance']",
-        "[data-testid*='sentence']",
-        # class-name patterns
-        "[class*='transcript-item']",
-        "[class*='transcriptItem']",
-        "[class*='utterance-item']",
-        "[class*='utteranceItem']",
-        "[class*='sentence-item']",
-        "[class*='transcript-content'] > *",
-        "[class*='transcriptContent'] > *",
-        "[class*='transcript-row']",
-    ]
-
-    blocks = []
-    for sel in TRANSCRIPT_CONTENT_SELECTORS:
-        blocks = page.query_selector_all(sel)
-        if blocks:
-            break
-
-    if blocks:
-        text = "\n".join(b.inner_text().strip() for b in blocks if b.inner_text().strip())
-    else:
-        # Last resort: grab the whole transcript panel
-        panel = page.query_selector(
-            "[class*='transcript']:not([class*='tab'])"
+        log.warning(
+            "[%d/%d] 'Copy & export' button not found for '%s'", index + 1, total, label
         )
-        text = panel.inner_text() if panel else ""
-
-    if not text.strip():
-        log.warning("[%d/%d] Could not extract text for '%s'", index + 1, total, label)
         return False
 
-    dest = EXPORT_DIR / f"{label}.txt"
-    dest.write_text(text, encoding="utf-8")
-    log.info("[%d/%d] Saved (scraped) → %s", index + 1, total, dest)
-    return True
+    try:
+        copy_export_btn.click()
+        page.wait_for_timeout(400)
+
+        # Step 2: click "Export transcript" in the dropdown
+        page.click("li:has-text('Export transcript')", timeout=5_000)
+        page.wait_for_timeout(400)
+
+        # Step 3: click "Export" in the modal → triggers file download
+        with page.expect_download(timeout=30_000) as dl_info:
+            page.click(
+                "dialog button:has-text('Export'), "
+                "[role='dialog'] button:has-text('Export'), "
+                ".el-dialog button:has-text('Export')",
+                timeout=5_000,
+            )
+
+        dl = dl_info.value
+        ext = (
+            dl.suggested_filename.rsplit(".", 1)[-1]
+            if "." in dl.suggested_filename
+            else TRANSCRIPT_FORMAT
+        )
+        dest = EXPORT_DIR / f"{label}.{ext}"
+        dl.save_as(dest)
+        log.info("[%d/%d] Saved → %s", index + 1, total, dest)
+        return True
+
+    except PWTimeoutError as exc:
+        log.warning(
+            "[%d/%d] Export flow failed for '%s': %s", index + 1, total, label, exc
+        )
+        try:
+            page.keyboard.press("Escape")
+        except Exception:
+            pass
+        return False
 
 
 # ---------------------------------------------------------------------------
