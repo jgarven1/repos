@@ -51,6 +51,16 @@ TRANSCRIPT_GENERATION_TIMEOUT_MS = 5 * 60 * 1000   # 5 minutes per recording
 PAGE_LOAD_TIMEOUT_MS = 30_000
 SCROLL_PAUSE_MS = 400
 
+POPUP_DISMISS_SELECTORS = [
+    "button:has-text('Maybe later')",
+    "button:has-text('Close')",
+    "button:has-text('Got it')",
+    "button:has-text('OK')",
+    "[aria-label='Close']",
+    "[data-testid='dialog-close-btn']",
+    ".modal-close",
+]
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -65,6 +75,18 @@ log = logging.getLogger(__name__)
 
 def safe_filename(name):
     return re.sub(r'[\\/:*?"<>|]', "_", name).strip()
+
+
+def dismiss_popups(page):
+    """Close any modal/dialog overlays that could block tab clicks."""
+    for sel in POPUP_DISMISS_SELECTORS:
+        try:
+            el = page.locator(sel).first
+            if el.is_visible(timeout=800):
+                el.click()
+                page.wait_for_timeout(300)
+        except PWTimeoutError:
+            pass
 
 
 def is_logged_in(page):
@@ -246,16 +268,15 @@ def navigate_to_file(page, file_id, url_pattern):
 
 def ensure_transcript_generated(page, title, index, total):
     """On the file detail page, generate transcript if not already done."""
-    # Try clicking a Transcript tab if one exists
+    dismiss_popups(page)
+
+    # Click the Transcript tab (data-testid="tab-transcript-item")
     try:
-        tab = page.locator(
-            "[role='tab']:has-text('Transcript'), button:has-text('Transcript'), "
-            "a:has-text('Transcript')"
-        ).first
-        tab.click(timeout=8_000)
+        page.click("[data-testid='tab-transcript-item']", timeout=8_000)
         page.wait_for_load_state("networkidle", timeout=PAGE_LOAD_TIMEOUT_MS)
+        page.wait_for_timeout(1_000)
     except PWTimeoutError:
-        pass  # Transcript may already be the default view
+        log.warning("[%d/%d] Could not click Transcript tab for '%s'", index + 1, total, title)
 
     # Look for a Generate/Transcribe button
     generate_btn = page.locator(
@@ -298,29 +319,33 @@ def export_transcript(page, label, index, total):
     """Export transcript via download button, or scrape visible text."""
     EXPORT_DIR.mkdir(parents=True, exist_ok=True)
 
-    # --- Try download button ---
-    export_btn = page.locator(
-        "button:has-text('Export'), button:has-text('Download'), "
-        "[aria-label*='export' i], [aria-label*='download' i]"
-    ).first
-
+    # --- Try the share/export toolbar button (data-testid="share-button") ---
+    share_btn = page.locator("[data-testid='share-button']").first
     try:
-        btn_visible = export_btn.is_visible(timeout=3_000)
+        btn_visible = share_btn.is_visible(timeout=3_000)
     except PWTimeoutError:
         btn_visible = False
 
     if btn_visible:
         try:
             with page.expect_download(timeout=30_000) as dl_info:
-                export_btn.click()
-                try:
-                    fmt = page.locator(
-                        f"button:has-text('{TRANSCRIPT_FORMAT.upper()}'), "
-                        f"li:has-text('{TRANSCRIPT_FORMAT.upper()}')"
-                    ).first
-                    fmt.click(timeout=5_000)
-                except PWTimeoutError:
-                    pass
+                share_btn.click()
+                page.wait_for_timeout(500)
+                # Look for a Download / Export option in the dropdown
+                for opt_sel in [
+                    f"li:has-text('{TRANSCRIPT_FORMAT.upper()}')",
+                    "li:has-text('Download')",
+                    "li:has-text('Export')",
+                    f"[data-testid*='export']:has-text('{TRANSCRIPT_FORMAT.upper()}')",
+                    "[data-testid*='download']",
+                ]:
+                    try:
+                        opt = page.locator(opt_sel).first
+                        if opt.is_visible(timeout=2_000):
+                            opt.click()
+                            break
+                    except PWTimeoutError:
+                        pass
 
             dl = dl_info.value
             ext = (
@@ -330,23 +355,49 @@ def export_transcript(page, label, index, total):
             )
             dest = EXPORT_DIR / f"{label}.{ext}"
             dl.save_as(dest)
-            log.info("[%d/%d] Saved → %s", index + 1, total, dest)
+            log.info("[%d/%d] Saved (download) → %s", index + 1, total, dest)
             return True
         except PWTimeoutError:
             log.warning("[%d/%d] Download timed out; falling back to text scrape", index + 1, total)
+            # Close any open dropdown before scraping
+            try:
+                page.keyboard.press("Escape")
+            except Exception:
+                pass
 
     # --- Fallback: scrape visible transcript text ---
     log.info("[%d/%d] Scraping transcript text for '%s'", index + 1, total, label)
-    blocks = page.query_selector_all(
-        "[class*='transcript-content'] p, [class*='transcriptContent'] p, "
-        "[class*='transcript-item'], [class*='transcriptItem'], "
-        "[class*='utterance'], [class*='segment']"
-    )
+
+    # Try progressively broader selectors for the transcript content
+    TRANSCRIPT_CONTENT_SELECTORS = [
+        # Plaud-specific data-testid patterns
+        "[data-testid*='transcript-item']",
+        "[data-testid*='utterance']",
+        "[data-testid*='sentence']",
+        # class-name patterns
+        "[class*='transcript-item']",
+        "[class*='transcriptItem']",
+        "[class*='utterance-item']",
+        "[class*='utteranceItem']",
+        "[class*='sentence-item']",
+        "[class*='transcript-content'] > *",
+        "[class*='transcriptContent'] > *",
+        "[class*='transcript-row']",
+    ]
+
+    blocks = []
+    for sel in TRANSCRIPT_CONTENT_SELECTORS:
+        blocks = page.query_selector_all(sel)
+        if blocks:
+            break
 
     if blocks:
-        text = "\n".join(b.inner_text() for b in blocks)
+        text = "\n".join(b.inner_text().strip() for b in blocks if b.inner_text().strip())
     else:
-        panel = page.query_selector("[class*='transcript']")
+        # Last resort: grab the whole transcript panel
+        panel = page.query_selector(
+            "[class*='transcript']:not([class*='tab'])"
+        )
         text = panel.inner_text() if panel else ""
 
     if not text.strip():
@@ -455,11 +506,12 @@ def main():
 
                 # Click the Transcript tab
                 try:
-                    page.click("button:has-text('Transcript'), [role='tab']:has-text('Transcript')", timeout=5000)
+                    page.click("[data-testid='tab-transcript-item']", timeout=5_000)
                     page.wait_for_load_state("networkidle", timeout=PAGE_LOAD_TIMEOUT_MS)
-                    page.wait_for_timeout(1500)
+                    page.wait_for_timeout(1_500)
+                    log.info("Transcript tab clicked successfully")
                 except PWTimeoutError:
-                    log.warning("Could not click Transcript tab")
+                    log.warning("Could not click Transcript tab with data-testid selector")
 
                 page.screenshot(path=str(debug_dir / "file.png"), full_page=True)
                 (debug_dir / "file.html").write_text(page.content(), encoding="utf-8")
