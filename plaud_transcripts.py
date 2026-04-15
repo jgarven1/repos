@@ -46,8 +46,10 @@ TRANSCRIPT_FORMAT = os.environ.get("TRANSCRIPT_FORMAT", "txt").lower()
 SESSION_FILE = pathlib.Path(os.environ.get("SESSION_FILE", ".plaud_session.json"))
 
 PLAUD_URL = "https://app.plaud.ai"
+ALL_FILES_URL = f"{PLAUD_URL}/file-list?categoryId=allFiles"
 TRANSCRIPT_GENERATION_TIMEOUT_MS = 5 * 60 * 1000   # 5 minutes per recording
 PAGE_LOAD_TIMEOUT_MS = 30_000
+SCROLL_PAUSE_MS = 400
 
 logging.basicConfig(
     level=logging.INFO,
@@ -61,22 +63,14 @@ log = logging.getLogger(__name__)
 # Helpers
 # ---------------------------------------------------------------------------
 
-def safe_filename(name: str) -> str:
-    """Strip characters that are unsafe in filenames."""
-    name = re.sub(r'[\\/:*?"<>|]', "_", name)
-    return name.strip()
+def safe_filename(name):
+    return re.sub(r'[\\/:*?"<>|]', "_", name).strip()
 
 
-def wait_and_click(page, selector: str, timeout: int = PAGE_LOAD_TIMEOUT_MS):
-    page.wait_for_selector(selector, timeout=timeout)
-    page.click(selector)
-
-
-def is_logged_in(page) -> bool:
-    """Return True if the recording list is already visible (session is active)."""
+def is_logged_in(page):
     try:
         page.wait_for_selector(
-            "[class*='record'], [class*='card'], [data-testid*='record'], li[class*='item']",
+            "li.file-list-item, [data-testid='nav-sidebar-all-files-item']",
             timeout=8_000,
         )
         return True
@@ -89,14 +83,9 @@ def is_logged_in(page) -> bool:
 # ---------------------------------------------------------------------------
 
 def run_setup(pw):
-    """
-    Open a visible browser window so the user can log in (including via Google/SSO).
-    Saves the authenticated session to SESSION_FILE when the user presses Enter.
-    """
     log.info("=== SETUP MODE ===")
     log.info("A browser window will open. Log in to Plaud however you normally do.")
-    log.info("When you are fully logged in and can see your recordings, come back here")
-    log.info("and press Enter to save the session.")
+    log.info("When fully logged in and your recordings are visible, come back here and press Enter.")
 
     browser = pw.chromium.launch(headless=False)
     context = browser.new_context(accept_downloads=True)
@@ -108,7 +97,6 @@ def run_setup(pw):
     context.storage_state(path=str(SESSION_FILE))
     log.info("Session saved to '%s'.", SESSION_FILE)
     log.info("You can now run the script normally: python3 plaud_transcripts.py")
-
     context.close()
     browser.close()
 
@@ -119,8 +107,6 @@ def run_setup(pw):
 
 def login_with_credentials(page):
     log.info("Logging in with email/password as %s", EMAIL)
-
-    # Accept any cookie banner if present
     try:
         page.click("button:has-text('Accept')", timeout=5_000)
     except PWTimeoutError:
@@ -133,161 +119,274 @@ def login_with_credentials(page):
     page.fill("input[type='email'], input[name='email'], input[placeholder*='mail' i]", EMAIL)
     page.fill("input[type='password']", PASSWORD)
     page.click("button[type='submit'], button:has-text('Sign in'), button:has-text('Log in')")
-
     page.wait_for_selector(
-        "[class*='record'], [class*='card'], [data-testid*='record'], li[class*='item']",
+        "li.file-list-item, [data-testid='nav-sidebar-all-files-item']",
         timeout=PAGE_LOAD_TIMEOUT_MS,
     )
     log.info("Login successful")
 
 
 # ---------------------------------------------------------------------------
-# Recording list
+# Collect all file IDs via virtual-scroller
 # ---------------------------------------------------------------------------
 
-def get_recording_cards(page) -> list:
-    """Return all recording card element handles visible on the page."""
-    selectors = [
-        "[class*='recordCard']",
-        "[class*='record-card']",
-        "[class*='noteCard']",
-        "[class*='note-card']",
-        "[class*='RecordItem']",
-        "[data-testid='record-item']",
-    ]
-    for sel in selectors:
-        cards = page.query_selector_all(sel)
-        if cards:
-            log.info("Found %d recording(s) using selector '%s'", len(cards), sel)
-            return cards
-
-    # Fallback: any element that contains an audio duration marker (e.g. "0:23")
-    cards = page.query_selector_all("li, div")
-    matched = [c for c in cards if re.search(r'\d+:\d{2}', c.inner_text())]
-    log.info("Fallback: found %d recording(s) by duration pattern", len(matched))
-    return matched
-
-
-# ---------------------------------------------------------------------------
-# Per-recording transcript workflow
-# ---------------------------------------------------------------------------
-
-def ensure_transcript_and_export(page, index: int, card) -> bool:
+def collect_all_file_ids(page):
     """
-    Open a recording, generate transcript if needed, export it.
-    Returns True on success, False if the recording was skipped/errored.
+    Navigate to the All Files page and scroll through the virtual list
+    to collect every file ID, title, and whether transcript is already generated.
+    Returns a list of dicts: [{id, title, has_transcript}]
     """
-    try:
-        label = card.query_selector("[class*='title'], [class*='name'], h3, h4").inner_text().strip()
-    except Exception:
-        label = f"recording_{index + 1}"
-    label = safe_filename(label) or f"recording_{index + 1}"
+    log.info("Loading All Files list...")
+    page.goto(ALL_FILES_URL, timeout=PAGE_LOAD_TIMEOUT_MS)
+    page.wait_for_selector("li.file-list-item", timeout=PAGE_LOAD_TIMEOUT_MS)
+    page.wait_for_timeout(500)
 
-    log.info("[%d] Opening '%s'", index + 1, label)
+    files = {}  # file_id -> {title, has_transcript}
 
-    try:
-        card.click()
+    while True:
+        prev_count = len(files)
+
+        for item in page.query_selector_all("li.file-list-item[data-file-id]"):
+            file_id = item.get_attribute("data-file-id")
+            if not file_id or file_id in files:
+                continue
+            title_el = item.query_selector(".file-list-item__filename")
+            title = title_el.inner_text().strip() if title_el else file_id
+            status_el = item.query_selector(".status-text")
+            has_transcript = bool(
+                status_el and "generated" in status_el.inner_text().lower()
+            )
+            files[file_id] = {"title": title, "has_transcript": has_transcript}
+
+        if len(files) == prev_count:
+            # No new items — try scrolling further; if already at bottom, stop
+            scrolled = page.evaluate("""
+                const s = document.querySelector('.vue-recycle-scroller');
+                if (!s) return false;
+                const before = s.scrollTop;
+                s.scrollBy(0, 800);
+                return s.scrollTop !== before;
+            """)
+            if not scrolled:
+                break
+        else:
+            page.evaluate(
+                "document.querySelector('.vue-recycle-scroller').scrollBy(0, 800)"
+            )
+
+        page.wait_for_timeout(SCROLL_PAUSE_MS)
+
+    log.info("Collected %d recording(s)", len(files))
+    return [{"id": fid, **data} for fid, data in files.items()]
+
+
+# ---------------------------------------------------------------------------
+# URL pattern discovery
+# ---------------------------------------------------------------------------
+
+def discover_url_pattern(page, file_id):
+    """
+    Click the first file item and check whether the resulting URL contains
+    the file ID. If so, return a format-string pattern for direct navigation.
+    """
+    page.goto(ALL_FILES_URL, timeout=PAGE_LOAD_TIMEOUT_MS)
+    page.wait_for_selector("li.file-list-item", timeout=PAGE_LOAD_TIMEOUT_MS)
+
+    item = page.query_selector(f"li.file-list-item[data-file-id='{file_id}']")
+    if not item:
+        return None
+
+    item.click()
+    page.wait_for_load_state("networkidle", timeout=PAGE_LOAD_TIMEOUT_MS)
+
+    current_url = page.url
+    if file_id in current_url:
+        pattern = current_url.replace(file_id, "{file_id}")
+        log.info("File URL pattern: %s", pattern)
+        return pattern
+
+    log.info("File ID not in URL — will scroll + click for each file")
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Navigate to a single file
+# ---------------------------------------------------------------------------
+
+def navigate_to_file(page, file_id, url_pattern):
+    """Open a file's detail page. Returns True on success."""
+    if url_pattern:
+        page.goto(url_pattern.format(file_id=file_id), timeout=PAGE_LOAD_TIMEOUT_MS)
         page.wait_for_load_state("networkidle", timeout=PAGE_LOAD_TIMEOUT_MS)
-    except PWTimeoutError:
-        log.warning("[%d] Timed out opening recording '%s', skipping", index + 1, label)
-        return False
+        return True
 
-    # ---- Navigate to the Transcript tab --------------------------------
+    # No URL pattern — scroll through the list and click the item
+    page.goto(ALL_FILES_URL, timeout=PAGE_LOAD_TIMEOUT_MS)
+    page.wait_for_selector("li.file-list-item", timeout=PAGE_LOAD_TIMEOUT_MS)
+
+    for _ in range(80):
+        item = page.query_selector(f"li.file-list-item[data-file-id='{file_id}']")
+        if item:
+            item.click()
+            page.wait_for_load_state("networkidle", timeout=PAGE_LOAD_TIMEOUT_MS)
+            return True
+        page.evaluate(
+            "document.querySelector('.vue-recycle-scroller').scrollBy(0, 500)"
+        )
+        page.wait_for_timeout(300)
+
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Transcript generation
+# ---------------------------------------------------------------------------
+
+def ensure_transcript_generated(page, title, index, total):
+    """On the file detail page, generate transcript if not already done."""
+    # Try clicking a Transcript tab if one exists
     try:
-        transcript_tab = page.locator(
-            "button:has-text('Transcript'), [role='tab']:has-text('Transcript'), "
-            "a:has-text('Transcript'), [class*='transcript' i]"
+        tab = page.locator(
+            "[role='tab']:has-text('Transcript'), button:has-text('Transcript'), "
+            "a:has-text('Transcript')"
         ).first
-        transcript_tab.click(timeout=10_000)
+        tab.click(timeout=8_000)
         page.wait_for_load_state("networkidle", timeout=PAGE_LOAD_TIMEOUT_MS)
     except PWTimeoutError:
-        log.warning("[%d] No Transcript tab found for '%s'", index + 1, label)
-        page.go_back()
-        return False
+        pass  # Transcript may already be the default view
 
-    # ---- Generate transcript if it hasn't been generated yet ----------
+    # Look for a Generate/Transcribe button
     generate_btn = page.locator(
         "button:has-text('Generate'), button:has-text('Transcribe'), "
-        "button:has-text('Create Transcript'), button:has-text('Start')"
+        "button:has-text('Create Transcript')"
     ).first
-    if generate_btn.is_visible(timeout=3_000):
-        log.info("[%d] Generating transcript for '%s'...", index + 1, label)
+
+    try:
+        btn_visible = generate_btn.is_visible(timeout=3_000)
+    except PWTimeoutError:
+        btn_visible = False
+
+    if btn_visible:
+        log.info("[%d/%d] Generating transcript for '%s'...", index + 1, total, title)
         generate_btn.click()
         try:
             page.wait_for_selector(
-                "[class*='transcriptContent'], [class*='transcript-content'], "
-                "[class*='TranscriptItem'], p[class*='segment']",
+                "[class*='transcript-content'], [class*='transcriptContent'], "
+                "[class*='transcript-item'], [class*='transcriptItem'], "
+                "[class*='utterance'], [class*='segment']",
                 timeout=TRANSCRIPT_GENERATION_TIMEOUT_MS,
             )
-            log.info("[%d] Transcript ready for '%s'", index + 1, label)
+            log.info("[%d/%d] Transcript ready", index + 1, total)
         except PWTimeoutError:
-            log.error("[%d] Transcript generation timed out for '%s'", index + 1, label)
-            page.go_back()
+            log.error(
+                "[%d/%d] Transcript generation timed out for '%s'", index + 1, total, title
+            )
             return False
     else:
-        log.info("[%d] Transcript already exists for '%s'", index + 1, label)
+        log.info("[%d/%d] Transcript already exists for '%s'", index + 1, total, title)
 
-    exported = _export_transcript(page, label, index)
-
-    page.go_back()
-    page.wait_for_load_state("networkidle", timeout=PAGE_LOAD_TIMEOUT_MS)
-    return exported
+    return True
 
 
-def _export_transcript(page, label: str, index: int) -> bool:
-    """
-    Try to export via the Export/Download button in the Plaud UI.
-    Falls back to scraping the visible transcript text if no button is found.
-    """
+# ---------------------------------------------------------------------------
+# Transcript export
+# ---------------------------------------------------------------------------
+
+def export_transcript(page, label, index, total):
+    """Export transcript via download button, or scrape visible text."""
     EXPORT_DIR.mkdir(parents=True, exist_ok=True)
 
+    # --- Try download button ---
     export_btn = page.locator(
         "button:has-text('Export'), button:has-text('Download'), "
         "[aria-label*='export' i], [aria-label*='download' i]"
     ).first
 
-    if export_btn.is_visible(timeout=3_000):
-        with page.expect_download(timeout=30_000) as dl_info:
-            export_btn.click()
-            try:
-                fmt_btn = page.locator(
-                    f"button:has-text('{TRANSCRIPT_FORMAT.upper()}'), "
-                    f"li:has-text('{TRANSCRIPT_FORMAT.upper()}')"
-                ).first
-                fmt_btn.click(timeout=5_000)
-            except PWTimeoutError:
-                pass
+    try:
+        btn_visible = export_btn.is_visible(timeout=3_000)
+    except PWTimeoutError:
+        btn_visible = False
 
-        download = dl_info.value
-        dest = EXPORT_DIR / f"{label}.{download.suggested_filename.rsplit('.', 1)[-1] or TRANSCRIPT_FORMAT}"
-        download.save_as(dest)
-        log.info("[%d] Saved transcript → %s", index + 1, dest)
-        return True
+    if btn_visible:
+        try:
+            with page.expect_download(timeout=30_000) as dl_info:
+                export_btn.click()
+                try:
+                    fmt = page.locator(
+                        f"button:has-text('{TRANSCRIPT_FORMAT.upper()}'), "
+                        f"li:has-text('{TRANSCRIPT_FORMAT.upper()}')"
+                    ).first
+                    fmt.click(timeout=5_000)
+                except PWTimeoutError:
+                    pass
 
-    # Fallback: scrape visible text
-    log.info("[%d] No export button found; scraping transcript text for '%s'", index + 1, label)
-    transcript_blocks = page.query_selector_all(
-        "[class*='transcriptContent'] p, [class*='transcript-content'] p, "
-        "[class*='TranscriptItem'], p[class*='segment'], [class*='utterance']"
+            dl = dl_info.value
+            ext = (
+                dl.suggested_filename.rsplit(".", 1)[-1]
+                if "." in dl.suggested_filename
+                else TRANSCRIPT_FORMAT
+            )
+            dest = EXPORT_DIR / f"{label}.{ext}"
+            dl.save_as(dest)
+            log.info("[%d/%d] Saved → %s", index + 1, total, dest)
+            return True
+        except PWTimeoutError:
+            log.warning("[%d/%d] Download timed out; falling back to text scrape", index + 1, total)
+
+    # --- Fallback: scrape visible transcript text ---
+    log.info("[%d/%d] Scraping transcript text for '%s'", index + 1, total, label)
+    blocks = page.query_selector_all(
+        "[class*='transcript-content'] p, [class*='transcriptContent'] p, "
+        "[class*='transcript-item'], [class*='transcriptItem'], "
+        "[class*='utterance'], [class*='segment']"
     )
-    if not transcript_blocks:
-        panel = page.query_selector("[class*='transcript' i]")
-        raw = panel.inner_text() if panel else ""
-    else:
-        raw = "\n".join(b.inner_text() for b in transcript_blocks)
 
-    if not raw.strip():
-        log.warning("[%d] Could not extract transcript text for '%s'", index + 1, label)
+    if blocks:
+        text = "\n".join(b.inner_text() for b in blocks)
+    else:
+        panel = page.query_selector("[class*='transcript']")
+        text = panel.inner_text() if panel else ""
+
+    if not text.strip():
+        log.warning("[%d/%d] Could not extract text for '%s'", index + 1, total, label)
         return False
 
     dest = EXPORT_DIR / f"{label}.txt"
-    dest.write_text(raw, encoding="utf-8")
-    log.info("[%d] Saved transcript (scraped) → %s", index + 1, dest)
+    dest.write_text(text, encoding="utf-8")
+    log.info("[%d/%d] Saved (scraped) → %s", index + 1, total, dest)
     return True
 
 
 # ---------------------------------------------------------------------------
-# Main entry point
+# Process one file
+# ---------------------------------------------------------------------------
+
+def process_file(page, file_info, index, total, url_pattern):
+    title = safe_filename(file_info["title"]) or f"recording_{index + 1}"
+    file_id = file_info["id"]
+
+    log.info("[%d/%d] '%s'", index + 1, total, title)
+
+    try:
+        if not navigate_to_file(page, file_id, url_pattern):
+            log.warning("[%d/%d] Could not navigate to '%s', skipping", index + 1, total, title)
+            return False
+
+        if not ensure_transcript_generated(page, title, index, total):
+            return False
+
+        return export_transcript(page, title, index, total)
+
+    except PWTimeoutError as exc:
+        log.error("[%d/%d] Timeout on '%s': %s", index + 1, total, title, exc)
+        return False
+    except Exception as exc:
+        log.error("[%d/%d] Error on '%s': %s", index + 1, total, title, exc)
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Main
 # ---------------------------------------------------------------------------
 
 def main():
@@ -299,15 +398,13 @@ def main():
             run_setup(pw)
             return
 
-        # Decide how to create the browser context
         has_session = SESSION_FILE.exists()
         browser = pw.chromium.launch(headless=False if debug_mode else HEADLESS)
 
         if has_session:
             log.info("Loading saved session from '%s'", SESSION_FILE)
             context = browser.new_context(
-                storage_state=str(SESSION_FILE),
-                accept_downloads=True,
+                storage_state=str(SESSION_FILE), accept_downloads=True
             )
         else:
             context = browser.new_context(accept_downloads=True)
@@ -336,31 +433,34 @@ def main():
                 debug_dir.mkdir(exist_ok=True)
                 page.screenshot(path=str(debug_dir / "page.png"), full_page=True)
                 (debug_dir / "page.html").write_text(page.content(), encoding="utf-8")
-                log.info("Debug snapshot saved to debug/page.png and debug/page.html")
-
-            EXPORT_DIR.mkdir(parents=True, exist_ok=True)
-            cards = get_recording_cards(page)
-            if not cards:
-                log.warning("No recordings found. Check that you are logged in and have recordings.")
-                if debug_mode:
-                    log.info("Open debug/page.png to see what the browser saw, "
-                             "and debug/page.html to inspect the HTML structure.")
+                log.info("Snapshot saved to debug/page.png and debug/page.html")
                 return
 
-            total = len(cards)
+            EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+
+            files = collect_all_file_ids(page)
+            if not files:
+                log.warning("No files found.")
+                return
+
+            url_pattern = discover_url_pattern(page, files[0]["id"])
+
+            total = len(files)
             succeeded = 0
             failed = 0
 
-            for i, card in enumerate(cards):
-                ok = ensure_transcript_and_export(page, i, card)
+            for i, file_info in enumerate(files):
+                ok = process_file(page, file_info, i, total, url_pattern)
                 if ok:
                     succeeded += 1
                 else:
                     failed += 1
-                time.sleep(1)
+                time.sleep(0.5)
 
-            log.info("Done. %d/%d transcripts exported to '%s'. %d failed/skipped.",
-                     succeeded, total, EXPORT_DIR, failed)
+            log.info(
+                "Done. %d/%d exported to '%s'. %d failed/skipped.",
+                succeeded, total, EXPORT_DIR, failed,
+            )
 
         finally:
             context.close()
