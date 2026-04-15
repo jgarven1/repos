@@ -493,6 +493,23 @@ def main():
                 page.screenshot(path=str(debug_dir / "file.png"), full_page=True)
                 (debug_dir / "file.html").write_text(page.content(), encoding="utf-8")
                 log.info("File detail snapshot saved to debug/file.png and debug/file.html")
+
+                # Log all clickable toolbar elements so we can find the right selector
+                log.info("=== Toolbar / button inventory ===")
+                elements = page.query_selector_all(
+                    "button, [role='button'], span[data-testid], div[data-testid]"
+                )
+                for el in elements:
+                    testid    = el.get_attribute("data-testid") or ""
+                    aria      = el.get_attribute("aria-label") or ""
+                    title_att = el.get_attribute("title") or ""
+                    txt       = (el.inner_text() or "").strip()[:40]
+                    if testid or aria or title_att:
+                        log.info(
+                            "  data-testid=%r  aria-label=%r  title=%r  text=%r",
+                            testid, aria, title_att, txt,
+                        )
+                log.info("=== End inventory ===")
                 return
 
             EXPORT_DIR.mkdir(parents=True, exist_ok=True)
