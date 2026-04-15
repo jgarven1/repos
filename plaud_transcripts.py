@@ -47,6 +47,7 @@ SESSION_FILE = pathlib.Path(os.environ.get("SESSION_FILE", ".plaud_session.json"
 
 PLAUD_URL = "https://app.plaud.ai"
 ALL_FILES_URL = f"{PLAUD_URL}/file-list?categoryId=allFiles"
+EXPORTED_LOG = EXPORT_DIR / ".exported"
 TRANSCRIPT_GENERATION_TIMEOUT_MS = 5 * 60 * 1000   # 5 minutes per recording
 PAGE_LOAD_TIMEOUT_MS = 30_000
 SCROLL_PAUSE_MS = 400
@@ -75,6 +76,20 @@ log = logging.getLogger(__name__)
 
 def safe_filename(name):
     return re.sub(r'[\\/:*?"<>|]', "_", name).strip()
+
+
+def load_exported_ids():
+    """Return the set of file IDs already exported in a previous run."""
+    if not EXPORTED_LOG.exists():
+        return set()
+    return set(EXPORTED_LOG.read_text(encoding="utf-8").splitlines())
+
+
+def mark_exported(file_id):
+    """Append a file ID to the exported log so it is skipped next time."""
+    EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+    with EXPORTED_LOG.open("a", encoding="utf-8") as f:
+        f.write(file_id + "\n")
 
 
 def dismiss_popups(page):
@@ -318,7 +333,7 @@ def ensure_transcript_generated(page, title, index, total):
 # Transcript export
 # ---------------------------------------------------------------------------
 
-def export_transcript(page, label, index, total):
+def export_transcript(page, label, file_id, index, total):
     """
     Export transcript using the toolbar flow:
       1. Click "Copy & export" button
@@ -362,6 +377,7 @@ def export_transcript(page, label, index, total):
         )
         dest = EXPORT_DIR / f"{label}.{ext}"
         dl.save_as(dest)
+        mark_exported(file_id)
         log.info("[%d/%d] Saved → %s", index + 1, total, dest)
         return True
 
@@ -386,6 +402,7 @@ def export_transcript(page, label, index, total):
 
     dest = EXPORT_DIR / f"{label}.txt"
     dest.write_text(text, encoding="utf-8")
+    mark_exported(file_id)
     log.info("[%d/%d] Saved (scraped) → %s", index + 1, total, dest)
     return True
 
@@ -408,7 +425,7 @@ def process_file(page, file_info, index, total, url_pattern):
         if not ensure_transcript_generated(page, title, index, total):
             return False
 
-        return export_transcript(page, title, index, total)
+        return export_transcript(page, title, file_id, index, total)
 
     except PWTimeoutError as exc:
         log.error("[%d/%d] Timeout on '%s': %s", index + 1, total, title, exc)
@@ -537,11 +554,19 @@ def main():
 
             url_pattern = discover_url_pattern(page, files[0]["id"])
 
+            exported_ids = load_exported_ids()
+            if exported_ids:
+                log.info("Skipping %d already-exported recording(s)", len(exported_ids & {f["id"] for f in files}))
+
             total = len(files)
             succeeded = 0
             failed = 0
+            skipped = 0
 
             for i, file_info in enumerate(files):
+                if file_info["id"] in exported_ids:
+                    skipped += 1
+                    continue
                 ok = process_file(page, file_info, i, total, url_pattern)
                 if ok:
                     succeeded += 1
@@ -550,8 +575,8 @@ def main():
                 time.sleep(0.5)
 
             log.info(
-                "Done. %d/%d exported to '%s'. %d failed/skipped.",
-                succeeded, total, EXPORT_DIR, failed,
+                "Done. %d exported, %d skipped (already done), %d failed. Folder: '%s'.",
+                succeeded, skipped, failed, EXPORT_DIR,
             )
 
         finally:
