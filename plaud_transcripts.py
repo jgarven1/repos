@@ -327,10 +327,8 @@ def export_transcript(page, label, index, total):
     """
     EXPORT_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Step 1: click the "Copy & export" toolbar button
-    copy_export_btn = page.locator(
-        "[aria-label='Copy & export'], [title='Copy & export']"
-    ).first
+    # Step 1: click the "Copy & export" toolbar button (data-testid='share-button')
+    copy_export_btn = page.locator("[data-testid='share-button']").first
     try:
         copy_export_btn.wait_for(state="visible", timeout=8_000)
     except PWTimeoutError:
@@ -369,13 +367,27 @@ def export_transcript(page, label, index, total):
 
     except PWTimeoutError as exc:
         log.warning(
-            "[%d/%d] Export flow failed for '%s': %s", index + 1, total, label, exc
+            "[%d/%d] Download flow failed for '%s': %s — falling back to scrape",
+            index + 1, total, label, exc,
         )
         try:
             page.keyboard.press("Escape")
         except Exception:
             pass
+
+    # Fallback: scrape the transcript content directly from the page
+    log.info("[%d/%d] Scraping transcript text for '%s'", index + 1, total, label)
+    panel = page.query_selector("[data-testid='file-detail-transcript-content']")
+    text = panel.inner_text().strip() if panel else ""
+
+    if not text:
+        log.warning("[%d/%d] Could not extract text for '%s'", index + 1, total, label)
         return False
+
+    dest = EXPORT_DIR / f"{label}.txt"
+    dest.write_text(text, encoding="utf-8")
+    log.info("[%d/%d] Saved (scraped) → %s", index + 1, total, dest)
+    return True
 
 
 # ---------------------------------------------------------------------------
