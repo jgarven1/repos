@@ -446,6 +446,15 @@ def main():
     setup_mode = "--setup" in sys.argv
     debug_mode = "--debug" in sys.argv
 
+    limit = None
+    if "--limit" in sys.argv:
+        idx = sys.argv.index("--limit")
+        try:
+            limit = int(sys.argv[idx + 1])
+        except (IndexError, ValueError):
+            log.error("Usage: --limit <number>  e.g. --limit 1")
+            sys.exit(1)
+
     with sync_playwright() as pw:
         if setup_mode:
             run_setup(pw)
@@ -524,6 +533,10 @@ def main():
             if not files:
                 log.warning("No files found.")
                 return
+
+            if limit:
+                files = files[:limit]
+                log.info("--limit %d: processing %d file(s)", limit, len(files))
 
             url_pattern = discover_url_pattern(page, files[0]["id"])
 
