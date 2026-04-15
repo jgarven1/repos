@@ -433,9 +433,26 @@ def main():
             if debug_mode:
                 debug_dir = pathlib.Path("debug")
                 debug_dir.mkdir(exist_ok=True)
+
+                # Snapshot the home/list page
                 page.screenshot(path=str(debug_dir / "page.png"), full_page=True)
                 (debug_dir / "page.html").write_text(page.content(), encoding="utf-8")
-                log.info("Snapshot saved to debug/page.png and debug/page.html")
+                log.info("Home snapshot saved to debug/page.png and debug/page.html")
+
+                # Snapshot the first file's detail page
+                files = collect_all_file_ids(page)
+                if files:
+                    url_pattern = discover_url_pattern(page, files[0]["id"])
+                    first_id = files[0]["id"]
+                    if url_pattern:
+                        page.goto(url_pattern.format(file_id=first_id), timeout=PAGE_LOAD_TIMEOUT_MS)
+                    else:
+                        navigate_to_file(page, first_id, None)
+                    page.wait_for_load_state("networkidle", timeout=PAGE_LOAD_TIMEOUT_MS)
+                    page.wait_for_timeout(2000)  # let JS render fully
+                    page.screenshot(path=str(debug_dir / "file.png"), full_page=True)
+                    (debug_dir / "file.html").write_text(page.content(), encoding="utf-8")
+                    log.info("File detail snapshot saved to debug/file.png and debug/file.html")
                 return
 
             EXPORT_DIR.mkdir(parents=True, exist_ok=True)
