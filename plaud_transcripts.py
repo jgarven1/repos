@@ -6,11 +6,20 @@ AI transcript generation for any recording that does not yet have one,
 and exports each finished transcript to a local directory.
 
 Configuration (via environment variables or a .env file):
-    PLAUD_EMAIL      – your Plaud account e-mail address
-    PLAUD_PASSWORD   – your Plaud account password
-    EXPORT_DIR       – directory where transcripts are saved (default: ./transcripts)
-    HEADLESS         – run browser without a visible window ("true"/"false", default: true)
+    PLAUD_EMAIL       – your Plaud account e-mail (only needed for email/password login)
+    PLAUD_PASSWORD    – your Plaud account password (only needed for email/password login)
+    EXPORT_DIR        – directory where transcripts are saved (default: ./transcripts)
+    HEADLESS          – run browser without a visible window ("true"/"false", default: true)
     TRANSCRIPT_FORMAT – export format: "txt" or "docx" (default: txt)
+    SESSION_FILE      – path to saved browser session (default: .plaud_session.json)
+
+Google / SSO users
+------------------
+Run once with --setup to log in manually in a real browser window.
+The session is saved to SESSION_FILE and reused on every subsequent run.
+
+    python3 plaud_transcripts.py --setup
+    python3 plaud_transcripts.py          # uses saved session from now on
 """
 
 import os
@@ -34,6 +43,7 @@ PASSWORD = os.environ.get("PLAUD_PASSWORD", "")
 EXPORT_DIR = pathlib.Path(os.environ.get("EXPORT_DIR", "transcripts"))
 HEADLESS = os.environ.get("HEADLESS", "true").lower() not in ("false", "0", "no")
 TRANSCRIPT_FORMAT = os.environ.get("TRANSCRIPT_FORMAT", "txt").lower()
+SESSION_FILE = pathlib.Path(os.environ.get("SESSION_FILE", ".plaud_session.json"))
 
 PLAUD_URL = "https://app.plaud.ai"
 TRANSCRIPT_GENERATION_TIMEOUT_MS = 5 * 60 * 1000   # 5 minutes per recording
@@ -62,13 +72,53 @@ def wait_and_click(page, selector: str, timeout: int = PAGE_LOAD_TIMEOUT_MS):
     page.click(selector)
 
 
+def is_logged_in(page) -> bool:
+    """Return True if the recording list is already visible (session is active)."""
+    try:
+        page.wait_for_selector(
+            "[class*='record'], [class*='card'], [data-testid*='record'], li[class*='item']",
+            timeout=8_000,
+        )
+        return True
+    except PWTimeoutError:
+        return False
+
+
 # ---------------------------------------------------------------------------
-# Login
+# Setup mode — one-time manual login to save a session
 # ---------------------------------------------------------------------------
 
-def login(page):
-    log.info("Navigating to %s", PLAUD_URL)
+def run_setup(pw):
+    """
+    Open a visible browser window so the user can log in (including via Google/SSO).
+    Saves the authenticated session to SESSION_FILE when the user presses Enter.
+    """
+    log.info("=== SETUP MODE ===")
+    log.info("A browser window will open. Log in to Plaud however you normally do.")
+    log.info("When you are fully logged in and can see your recordings, come back here")
+    log.info("and press Enter to save the session.")
+
+    browser = pw.chromium.launch(headless=False)
+    context = browser.new_context(accept_downloads=True)
+    page = context.new_page()
     page.goto(PLAUD_URL, timeout=PAGE_LOAD_TIMEOUT_MS)
+
+    input("\nPress Enter once you are logged in and can see your recordings... ")
+
+    context.storage_state(path=str(SESSION_FILE))
+    log.info("Session saved to '%s'.", SESSION_FILE)
+    log.info("You can now run the script normally: python3 plaud_transcripts.py")
+
+    context.close()
+    browser.close()
+
+
+# ---------------------------------------------------------------------------
+# Login (email/password fallback)
+# ---------------------------------------------------------------------------
+
+def login_with_credentials(page):
+    log.info("Logging in with email/password as %s", EMAIL)
 
     # Accept any cookie banner if present
     try:
@@ -76,15 +126,14 @@ def login(page):
     except PWTimeoutError:
         pass
 
-    # Fill login form
-    log.info("Logging in as %s", EMAIL)
-    page.wait_for_selector("input[type='email'], input[name='email'], input[placeholder*='mail' i]",
-                           timeout=PAGE_LOAD_TIMEOUT_MS)
+    page.wait_for_selector(
+        "input[type='email'], input[name='email'], input[placeholder*='mail' i]",
+        timeout=PAGE_LOAD_TIMEOUT_MS,
+    )
     page.fill("input[type='email'], input[name='email'], input[placeholder*='mail' i]", EMAIL)
     page.fill("input[type='password']", PASSWORD)
     page.click("button[type='submit'], button:has-text('Sign in'), button:has-text('Log in')")
 
-    # Wait for the recording list to appear after login
     page.wait_for_selector(
         "[class*='record'], [class*='card'], [data-testid*='record'], li[class*='item']",
         timeout=PAGE_LOAD_TIMEOUT_MS,
@@ -98,7 +147,6 @@ def login(page):
 
 def get_recording_cards(page) -> list:
     """Return all recording card element handles visible on the page."""
-    # Plaud renders recordings as cards/list items; try several selectors
     selectors = [
         "[class*='recordCard']",
         "[class*='record-card']",
@@ -113,7 +161,7 @@ def get_recording_cards(page) -> list:
             log.info("Found %d recording(s) using selector '%s'", len(cards), sel)
             return cards
 
-    # Fallback: any <li> or <div> that contains an audio duration marker (e.g. "0:23")
+    # Fallback: any element that contains an audio duration marker (e.g. "0:23")
     cards = page.query_selector_all("li, div")
     matched = [c for c in cards if re.search(r'\d+:\d{2}', c.inner_text())]
     log.info("Fallback: found %d recording(s) by duration pattern", len(matched))
@@ -129,7 +177,6 @@ def ensure_transcript_and_export(page, index: int, card) -> bool:
     Open a recording, generate transcript if needed, export it.
     Returns True on success, False if the recording was skipped/errored.
     """
-    # Derive a label for logging/filenames
     try:
         label = card.query_selector("[class*='title'], [class*='name'], h3, h4").inner_text().strip()
     except Exception:
@@ -166,7 +213,6 @@ def ensure_transcript_and_export(page, index: int, card) -> bool:
     if generate_btn.is_visible(timeout=3_000):
         log.info("[%d] Generating transcript for '%s'...", index + 1, label)
         generate_btn.click()
-        # Wait until the generate button disappears or a transcript block appears
         try:
             page.wait_for_selector(
                 "[class*='transcriptContent'], [class*='transcript-content'], "
@@ -181,7 +227,6 @@ def ensure_transcript_and_export(page, index: int, card) -> bool:
     else:
         log.info("[%d] Transcript already exists for '%s'", index + 1, label)
 
-    # ---- Export transcript ---------------------------------------------
     exported = _export_transcript(page, label, index)
 
     page.go_back()
@@ -196,7 +241,6 @@ def _export_transcript(page, label: str, index: int) -> bool:
     """
     EXPORT_DIR.mkdir(parents=True, exist_ok=True)
 
-    # --- Attempt UI export (button-based) ---
     export_btn = page.locator(
         "button:has-text('Export'), button:has-text('Download'), "
         "[aria-label*='export' i], [aria-label*='download' i]"
@@ -205,7 +249,6 @@ def _export_transcript(page, label: str, index: int) -> bool:
     if export_btn.is_visible(timeout=3_000):
         with page.expect_download(timeout=30_000) as dl_info:
             export_btn.click()
-            # If a format submenu appears, choose the preferred format
             try:
                 fmt_btn = page.locator(
                     f"button:has-text('{TRANSCRIPT_FORMAT.upper()}'), "
@@ -213,7 +256,7 @@ def _export_transcript(page, label: str, index: int) -> bool:
                 ).first
                 fmt_btn.click(timeout=5_000)
             except PWTimeoutError:
-                pass  # No submenu – download already triggered
+                pass
 
         download = dl_info.value
         dest = EXPORT_DIR / f"{label}.{download.suggested_filename.rsplit('.', 1)[-1] or TRANSCRIPT_FORMAT}"
@@ -221,14 +264,13 @@ def _export_transcript(page, label: str, index: int) -> bool:
         log.info("[%d] Saved transcript → %s", index + 1, dest)
         return True
 
-    # --- Fallback: scrape visible text ---
+    # Fallback: scrape visible text
     log.info("[%d] No export button found; scraping transcript text for '%s'", index + 1, label)
     transcript_blocks = page.query_selector_all(
         "[class*='transcriptContent'] p, [class*='transcript-content'] p, "
         "[class*='TranscriptItem'], p[class*='segment'], [class*='utterance']"
     )
     if not transcript_blocks:
-        # Last resort: grab all visible text inside the transcript panel
         panel = page.query_selector("[class*='transcript' i]")
         raw = panel.inner_text() if panel else ""
     else:
@@ -249,24 +291,46 @@ def _export_transcript(page, label: str, index: int) -> bool:
 # ---------------------------------------------------------------------------
 
 def main():
-    if not EMAIL or not PASSWORD:
-        log.error(
-            "PLAUD_EMAIL and PLAUD_PASSWORD must be set "
-            "(via environment variables or a .env file)."
-        )
-        sys.exit(1)
-
-    EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+    setup_mode = "--setup" in sys.argv
 
     with sync_playwright() as pw:
+        if setup_mode:
+            run_setup(pw)
+            return
+
+        # Decide how to create the browser context
+        has_session = SESSION_FILE.exists()
         browser = pw.chromium.launch(headless=HEADLESS)
-        context = browser.new_context(accept_downloads=True)
+
+        if has_session:
+            log.info("Loading saved session from '%s'", SESSION_FILE)
+            context = browser.new_context(
+                storage_state=str(SESSION_FILE),
+                accept_downloads=True,
+            )
+        else:
+            context = browser.new_context(accept_downloads=True)
+
         page = context.new_page()
         page.set_default_timeout(PAGE_LOAD_TIMEOUT_MS)
 
         try:
-            login(page)
+            page.goto(PLAUD_URL, timeout=PAGE_LOAD_TIMEOUT_MS)
 
+            if not is_logged_in(page):
+                if has_session:
+                    log.warning("Saved session has expired. Re-run with --setup to log in again.")
+                    sys.exit(1)
+                if not EMAIL or not PASSWORD:
+                    log.error(
+                        "Not logged in. Either:\n"
+                        "  • Run once with --setup to log in via Google/SSO, or\n"
+                        "  • Set PLAUD_EMAIL and PLAUD_PASSWORD in your .env file."
+                    )
+                    sys.exit(1)
+                login_with_credentials(page)
+
+            EXPORT_DIR.mkdir(parents=True, exist_ok=True)
             cards = get_recording_cards(page)
             if not cards:
                 log.warning("No recordings found. Check that you are logged in and have recordings.")
@@ -282,7 +346,6 @@ def main():
                     succeeded += 1
                 else:
                     failed += 1
-                # Small courtesy delay between recordings
                 time.sleep(1)
 
             log.info("Done. %d/%d transcripts exported to '%s'. %d failed/skipped.",
