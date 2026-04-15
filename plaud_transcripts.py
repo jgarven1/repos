@@ -274,17 +274,13 @@ def ensure_transcript_generated(page, title, index, total):
     """
     dismiss_popups(page)
 
-    # Ensure Transcript tab is active (it usually is by default)
+    # Click the Transcript tab — it is not active by default
     try:
-        tab = page.locator("[data-testid='tab-transcript-item']").first
-        if tab.is_visible(timeout=3_000):
-            # Only click if it isn't already active
-            if "is-active" not in (tab.get_attribute("class") or ""):
-                tab.click()
-                page.wait_for_load_state("networkidle", timeout=PAGE_LOAD_TIMEOUT_MS)
-                page.wait_for_timeout(800)
+        page.click("[data-testid='tab-transcript-item']", timeout=8_000)
+        page.wait_for_load_state("networkidle", timeout=PAGE_LOAD_TIMEOUT_MS)
+        page.wait_for_timeout(800)
     except PWTimeoutError:
-        pass
+        log.warning("[%d/%d] Could not click Transcript tab for '%s'", index + 1, total, title)
 
     # Check if transcript needs to be generated
     generate_btn = page.locator(
