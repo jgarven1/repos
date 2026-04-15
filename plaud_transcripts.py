@@ -292,6 +292,7 @@ def _export_transcript(page, label: str, index: int) -> bool:
 
 def main():
     setup_mode = "--setup" in sys.argv
+    debug_mode = "--debug" in sys.argv
 
     with sync_playwright() as pw:
         if setup_mode:
@@ -300,7 +301,7 @@ def main():
 
         # Decide how to create the browser context
         has_session = SESSION_FILE.exists()
-        browser = pw.chromium.launch(headless=HEADLESS)
+        browser = pw.chromium.launch(headless=False if debug_mode else HEADLESS)
 
         if has_session:
             log.info("Loading saved session from '%s'", SESSION_FILE)
@@ -330,10 +331,20 @@ def main():
                     sys.exit(1)
                 login_with_credentials(page)
 
+            if debug_mode:
+                debug_dir = pathlib.Path("debug")
+                debug_dir.mkdir(exist_ok=True)
+                page.screenshot(path=str(debug_dir / "page.png"), full_page=True)
+                (debug_dir / "page.html").write_text(page.content(), encoding="utf-8")
+                log.info("Debug snapshot saved to debug/page.png and debug/page.html")
+
             EXPORT_DIR.mkdir(parents=True, exist_ok=True)
             cards = get_recording_cards(page)
             if not cards:
                 log.warning("No recordings found. Check that you are logged in and have recordings.")
+                if debug_mode:
+                    log.info("Open debug/page.png to see what the browser saw, "
+                             "and debug/page.html to inspect the HTML structure.")
                 return
 
             total = len(cards)
