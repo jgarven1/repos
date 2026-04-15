@@ -161,11 +161,13 @@ def collect_all_file_ids(page):
         if len(files) == prev_count:
             # No new items — try scrolling further; if already at bottom, stop
             scrolled = page.evaluate("""
-                const s = document.querySelector('.vue-recycle-scroller');
-                if (!s) return false;
-                const before = s.scrollTop;
-                s.scrollBy(0, 800);
-                return s.scrollTop !== before;
+                (() => {
+                    const s = document.querySelector('.vue-recycle-scroller');
+                    if (!s) return false;
+                    const before = s.scrollTop;
+                    s.scrollBy(0, 800);
+                    return s.scrollTop !== before;
+                })()
             """)
             if not scrolled:
                 break
