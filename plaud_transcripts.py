@@ -458,7 +458,14 @@ def main():
             return
 
         has_session = SESSION_FILE.exists()
-        browser = pw.chromium.launch(headless=False if debug_mode else HEADLESS)
+        # Use system Chrome so it inherits macOS network/DNS settings.
+        # Falls back to Playwright's bundled Chromium if Chrome isn't installed.
+        try:
+            browser = pw.chromium.launch(
+                channel="chrome", headless=False if debug_mode else HEADLESS
+            )
+        except Exception:
+            browser = pw.chromium.launch(headless=False if debug_mode else HEADLESS)
 
         if has_session:
             log.info("Loading saved session from '%s'", SESSION_FILE)
