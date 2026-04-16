@@ -491,54 +491,34 @@ def main():
                 debug_dir = pathlib.Path("debug")
                 debug_dir.mkdir(exist_ok=True)
 
-                # Navigate directly to a known file and snapshot the Transcript tab
-                file_url = "https://web.plaud.ai/file/8b0e55e6c07fa8e803362e4563124ff2"
-                log.info("Navigating to file detail page...")
-                page.goto(file_url, timeout=PAGE_LOAD_TIMEOUT_MS)
-                page.wait_for_load_state("networkidle", timeout=PAGE_LOAD_TIMEOUT_MS)
-                page.wait_for_timeout(2000)
+                # Navigate to the file list and inspect a list item's date HTML
+                log.info("Navigating to file list to inspect date element...")
+                page.goto(ALL_FILES_URL, timeout=PAGE_LOAD_TIMEOUT_MS)
+                page.wait_for_selector("li.file-list-item", timeout=PAGE_LOAD_TIMEOUT_MS)
+                page.wait_for_timeout(1_000)
 
-                # Dismiss any popups
-                for dismiss_sel in [
-                    "button:has-text('Maybe later')",
-                    "button:has-text('Close')",
-                    "[aria-label='Close']",
-                    "button:has-text('Accept')",
-                ]:
-                    try:
-                        page.click(dismiss_sel, timeout=2000)
-                    except PWTimeoutError:
-                        pass
+                # Dump the outer HTML of the first list item
+                first_item = page.query_selector("li.file-list-item[data-file-id]")
+                if first_item:
+                    item_html = first_item.evaluate("el => el.outerHTML")
+                    (debug_dir / "list-item.html").write_text(item_html, encoding="utf-8")
+                    log.info("First list item HTML saved to debug/list-item.html")
 
-                # Click the Transcript tab
-                try:
-                    page.click("[data-testid='tab-transcript-item']", timeout=5_000)
-                    page.wait_for_load_state("networkidle", timeout=PAGE_LOAD_TIMEOUT_MS)
-                    page.wait_for_timeout(1_500)
-                    log.info("Transcript tab clicked successfully")
-                except PWTimeoutError:
-                    log.warning("Could not click Transcript tab with data-testid selector")
+                    # Log every child element with its class, text, and data attributes
+                    log.info("=== List item child elements ===")
+                    children = first_item.query_selector_all("*")
+                    for child in children:
+                        cls  = child.get_attribute("class") or ""
+                        txt  = (child.inner_text() or "").strip()[:60]
+                        tag  = child.evaluate("el => el.tagName.toLowerCase()")
+                        if txt:
+                            log.info("  <%s> class=%r  text=%r", tag, cls, txt)
+                    log.info("=== End list item elements ===")
+                else:
+                    log.warning("No list items found")
 
-                page.screenshot(path=str(debug_dir / "file.png"), full_page=True)
-                (debug_dir / "file.html").write_text(page.content(), encoding="utf-8")
-                log.info("File detail snapshot saved to debug/file.png and debug/file.html")
-
-                # Log all clickable toolbar elements so we can find the right selector
-                log.info("=== Toolbar / button inventory ===")
-                elements = page.query_selector_all(
-                    "button, [role='button'], span[data-testid], div[data-testid]"
-                )
-                for el in elements:
-                    testid    = el.get_attribute("data-testid") or ""
-                    aria      = el.get_attribute("aria-label") or ""
-                    title_att = el.get_attribute("title") or ""
-                    txt       = (el.inner_text() or "").strip()[:40]
-                    if testid or aria or title_att:
-                        log.info(
-                            "  data-testid=%r  aria-label=%r  title=%r  text=%r",
-                            testid, aria, title_att, txt,
-                        )
-                log.info("=== End inventory ===")
+                page.screenshot(path=str(debug_dir / "list.png"), full_page=False)
+                log.info("List page screenshot saved to debug/list.png")
                 return
 
             EXPORT_DIR.mkdir(parents=True, exist_ok=True)
