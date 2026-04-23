@@ -36,11 +36,17 @@ EOF
 # Launcher — runs the menu bar app using the current python3
 # Explicitly adds the user site-packages so rumps is found when
 # launched via double-click (app bundles don't inherit shell env).
+LOG="$SCRIPT_DIR/plaud_app.log"
 cat > "$MACOS/Plaud" << EOF
 #!/bin/bash
+exec > "$LOG" 2>&1
+echo "--- Plaud launcher started \$(date) ---"
 PYVER="\$("$PYTHON" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")"
+echo "Python: $PYTHON  version: \$PYVER"
 export PYTHONPATH="\$HOME/Library/Python/\$PYVER/lib/python/site-packages:\$PYTHONPATH"
-exec "$PYTHON" "$SCRIPT_DIR/plaud_menu_bar.py"
+echo "PYTHONPATH: \$PYTHONPATH"
+"$PYTHON" "$SCRIPT_DIR/plaud_menu_bar.py"
+echo "--- exited with code \$? ---"
 EOF
 
 chmod +x "$MACOS/Plaud"
