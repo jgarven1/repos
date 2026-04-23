@@ -33,20 +33,25 @@ cat > "$APP/Contents/Info.plist" << 'EOF'
 </plist>
 EOF
 
-# Launcher — runs the menu bar app using the current python3
-# Explicitly adds the user site-packages so rumps is found when
-# launched via double-click (app bundles don't inherit shell env).
-LOG="$SCRIPT_DIR/plaud_app.log"
+# Launcher — Python is the direct executable so it can connect to the
+# macOS window server and display the menu bar icon. A bash intermediary
+# prevents that connection from being established.
 cat > "$MACOS/Plaud" << EOF
-#!/bin/bash
-exec > "$LOG" 2>&1
-echo "--- Plaud launcher started \$(date) ---"
-PYVER="\$("$PYTHON" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")"
-echo "Python: $PYTHON  version: \$PYVER"
-export PYTHONPATH="\$HOME/Library/Python/\$PYVER/lib/python/site-packages:\$PYTHONPATH"
-echo "PYTHONPATH: \$PYTHONPATH"
-"$PYTHON" "$SCRIPT_DIR/plaud_menu_bar.py"
-echo "--- exited with code \$? ---"
+#!$PYTHON
+import sys, os, pathlib, runpy
+
+# Add user site-packages so rumps is importable without shell env
+_ver = f"{sys.version_info.major}.{sys.version_info.minor}"
+_pkgs = pathlib.Path.home() / f"Library/Python/{_ver}/lib/python/site-packages"
+if str(_pkgs) not in sys.path:
+    sys.path.insert(0, str(_pkgs))
+
+# Run from the repos directory
+_repos = pathlib.Path("$SCRIPT_DIR")
+os.chdir(str(_repos))
+sys.path.insert(0, str(_repos))
+
+runpy.run_path(str(_repos / "plaud_menu_bar.py"), run_name="__main__")
 EOF
 
 chmod +x "$MACOS/Plaud"
