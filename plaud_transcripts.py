@@ -452,6 +452,20 @@ def main():
             log.error("Usage: --limit <number>  e.g. --limit 1")
             sys.exit(1)
 
+    # --account NAME keeps separate session + transcript files per account
+    if "--account" in sys.argv:
+        idx = sys.argv.index("--account")
+        try:
+            account = sys.argv[idx + 1]
+        except IndexError:
+            log.error("Usage: --account <name>  e.g. --account work")
+            sys.exit(1)
+        global SESSION_FILE, EXPORT_DIR, EXPORTED_LOG
+        SESSION_FILE  = pathlib.Path(f".plaud_session_{account}.json")
+        EXPORT_DIR    = pathlib.Path(f"transcripts_{account}")
+        EXPORTED_LOG  = EXPORT_DIR / ".exported"
+        log.info("Account: %s  (session: %s, output: %s)", account, SESSION_FILE, EXPORT_DIR)
+
     with sync_playwright() as pw:
         if setup_mode:
             run_setup(pw)
