@@ -124,7 +124,10 @@ def run_setup(pw):
     log.info("A browser window will open. Log in to Plaud however you normally do.")
     log.info("When fully logged in and your recordings are visible, come back here and press Enter.")
 
-    browser = pw.chromium.launch(headless=False)
+    try:
+        browser = pw.chromium.launch(channel="chrome", headless=False)
+    except Exception:
+        browser = pw.chromium.launch(headless=False)
     context = browser.new_context(accept_downloads=True)
     page = context.new_page()
     page.goto(PLAUD_URL, timeout=PAGE_LOAD_TIMEOUT_MS)
