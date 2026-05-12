@@ -51,7 +51,7 @@ _repos = pathlib.Path("$SCRIPT_DIR")
 os.chdir(str(_repos))
 sys.path.insert(0, str(_repos))
 
-runpy.run_path(str(_repos / "plaud_menu_bar.py"), run_name="__main__")
+runpy.run_path(str(_repos / "plaud_gui.py"), run_name="__main__")
 EOF
 
 chmod +x "$MACOS/Plaud"
