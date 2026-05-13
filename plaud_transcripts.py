@@ -28,9 +28,11 @@ import sys
 import time
 import pathlib
 import logging
+import tempfile
 
 from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeoutError
+import security
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -38,16 +40,18 @@ from playwright.sync_api import sync_playwright, TimeoutError as PWTimeoutError
 
 load_dotenv()
 
-EMAIL = os.environ.get("PLAUD_EMAIL", "")
-PASSWORD = os.environ.get("PLAUD_PASSWORD", "")
-EXPORT_DIR = pathlib.Path(os.environ.get("EXPORT_DIR", "transcripts"))
-HEADLESS = os.environ.get("HEADLESS", "true").lower() not in ("false", "0", "no")
+EMAIL             = os.environ.get("PLAUD_EMAIL", "")
+PASSWORD          = os.environ.get("PLAUD_PASSWORD", "")
+HEADLESS          = os.environ.get("HEADLESS", "true").lower() not in ("false", "0", "no")
 TRANSCRIPT_FORMAT = os.environ.get("TRANSCRIPT_FORMAT", "txt").lower()
-SESSION_FILE = pathlib.Path(os.environ.get("SESSION_FILE", ".plaud_session.json"))
 
-PLAUD_URL = "https://app.plaud.ai"
+# Paths are resolved per-account in main(); these are defaults.
+SESSION_FILE  = security.session_path("default")
+EXPORT_DIR    = security.transcripts_path("default")
+EXPORTED_LOG  = security.exported_log_path("default")
+
+PLAUD_URL     = "https://app.plaud.ai"
 ALL_FILES_URL = f"{PLAUD_URL}/file-list?categoryId=allFiles"
-EXPORTED_LOG = EXPORT_DIR / ".exported"
 TRANSCRIPT_GENERATION_TIMEOUT_MS = 5 * 60 * 1000   # 5 minutes per recording
 PAGE_LOAD_TIMEOUT_MS = 30_000
 SCROLL_PAUSE_MS = 400
@@ -134,8 +138,16 @@ def run_setup(pw):
 
     input("\nPress Enter once you are logged in and can see your recordings... ")
 
-    context.storage_state(path=str(SESSION_FILE))
-    log.info("Session saved to '%s'.", SESSION_FILE)
+    # Save to a temp file, then encrypt it into the secure location
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
+        tmp_path = tmp.name
+    context.storage_state(path=tmp_path)
+    import json as _json
+    session_data = _json.loads(pathlib.Path(tmp_path).read_text())
+    os.unlink(tmp_path)
+
+    security.encrypt_session(session_data, SESSION_FILE)
+    log.info("Session saved securely to '%s'.", SESSION_FILE)
     log.info("You can now run the script normally: python3 plaud_transcripts.py")
     context.close()
     browser.close()
@@ -456,6 +468,7 @@ def main():
             sys.exit(1)
 
     # --account NAME keeps separate session + transcript files per account
+    account = "default"
     if "--account" in sys.argv:
         idx = sys.argv.index("--account")
         try:
@@ -463,11 +476,19 @@ def main():
         except IndexError:
             log.error("Usage: --account <name>  e.g. --account work")
             sys.exit(1)
-        global SESSION_FILE, EXPORT_DIR, EXPORTED_LOG
-        SESSION_FILE  = pathlib.Path(f".plaud_session_{account}.json")
-        EXPORT_DIR    = pathlib.Path(f"transcripts_{account}")
-        EXPORTED_LOG  = EXPORT_DIR / ".exported"
-        log.info("Account: %s  (session: %s, output: %s)", account, SESSION_FILE, EXPORT_DIR)
+
+    global SESSION_FILE, EXPORT_DIR, EXPORTED_LOG
+    SESSION_FILE  = security.session_path(account)
+    EXPORT_DIR    = security.transcripts_path(account)
+    EXPORTED_LOG  = security.exported_log_path(account)
+    if account != "default":
+        log.info("Account: %s", account)
+
+    # Migrate any old plain-text session files from the repos folder
+    old_dir = pathlib.Path(__file__).parent
+    migrated = security.migrate_old_files(old_dir)
+    if migrated:
+        log.info("Migrated %d session file(s) to secure storage: %s", len(migrated), migrated)
 
     with sync_playwright() as pw:
         if setup_mode:
@@ -486,8 +507,9 @@ def main():
 
         if has_session:
             log.info("Loading saved session from '%s'", SESSION_FILE)
+            session_data = security.decrypt_session(SESSION_FILE)
             context = browser.new_context(
-                storage_state=str(SESSION_FILE), accept_downloads=True
+                storage_state=session_data, accept_downloads=True
             )
         else:
             context = browser.new_context(accept_downloads=True)

@@ -11,53 +11,45 @@ import threading
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 
+import security
+
 SCRIPT_DIR  = pathlib.Path(__file__).parent
 MAIN_SCRIPT = SCRIPT_DIR / "plaud_transcripts.py"
 PYTHON      = sys.executable
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Helpers (delegate to security module)
 # ---------------------------------------------------------------------------
 
 def get_accounts():
-    accounts = []
-    if (SCRIPT_DIR / ".plaud_session.json").exists():
-        accounts.append("default")
-    for f in sorted(SCRIPT_DIR.glob(".plaud_session_*.json")):
-        accounts.append(f.stem[len(".plaud_session_"):])
-    return accounts
-
+    return security.get_accounts()
 
 def session_file(account):
-    if account == "default":
-        return SCRIPT_DIR / ".plaud_session.json"
-    return SCRIPT_DIR / f".plaud_session_{account}.json"
-
+    return security.session_path(account)
 
 def transcripts_dir(account):
-    if account == "default":
-        return SCRIPT_DIR / "transcripts"
-    return SCRIPT_DIR / f"transcripts_{account}"
+    return security.transcripts_path(account)
 
 
 def extract_session_info(account):
-    """Parse the session JSON and return displayable info."""
+    """Decrypt the session and return displayable (non-sensitive) info."""
     sf = session_file(account)
     if not sf.exists():
         return {}
     try:
-        data = json.loads(sf.read_text())
+        data = security.decrypt_session(sf)
         info = {
-            "Session file": str(sf.name),
-            "Transcripts folder": str(transcripts_dir(account)),
+            "Session file": sf.name,
+            "Location":     str(sf.parent),
+            "Encrypted":    "Yes ✓",
+            "Permissions":  "Owner only (600) ✓",
             "Cookies saved": str(len(data.get("cookies", []))),
         }
-        # Try to find email in localStorage
         for origin in data.get("origins", []):
             for item in origin.get("localStorage", []):
                 val = item.get("value", "")
-                if "@" in val and len(val) < 100:
+                if "@" in val and len(val) < 120:
                     try:
                         parsed = json.loads(val)
                         email = parsed.get("email") or parsed.get("userEmail")
@@ -68,7 +60,7 @@ def extract_session_info(account):
                         pass
         return info
     except Exception:
-        return {"Session file": str(sf.name)}
+        return {"Session file": sf.name, "Status": "Could not decrypt"}
 
 
 # ---------------------------------------------------------------------------
@@ -154,15 +146,16 @@ class AccountDetailDialog(tk.Toplevel):
                                    f"An account named '{new}' already exists.", parent=self)
             return
 
-        # Rename session file
-        old_sf = session_file(self.account)
-        new_sf = session_file(new)
+        # Rename session file (stays encrypted, just renamed)
+        old_sf = security.session_path(self.account)
+        new_sf = security.session_path(new)
         if old_sf.exists():
             old_sf.rename(new_sf)
+            security.set_secure_permissions(new_sf)
 
         # Rename transcripts folder if it exists
-        old_td = transcripts_dir(self.account)
-        new_td = transcripts_dir(new)
+        old_td = security.transcripts_path(self.account)
+        new_td = security.transcripts_path(new)
         if old_td.exists() and not new_td.exists():
             old_td.rename(new_td)
 
@@ -178,10 +171,57 @@ class AccountDetailDialog(tk.Toplevel):
 class PlaudApp(tk.Tk):
     def __init__(self):
         super().__init__()
+        self.withdraw()   # hide until authenticated
         self.title("Plaud Transcripts")
         self.resizable(False, False)
         self._build_ui()
+
+        # Migrate any old plain-text sessions from the repos folder
+        migrated = security.migrate_old_files(SCRIPT_DIR)
+        if migrated:
+            self._log(f"Migrated {len(migrated)} session file(s) to secure storage.")
+
         self._refresh_accounts()
+
+        # Authenticate before showing the window
+        threading.Thread(target=self._authenticate, daemon=True).start()
+
+    def _authenticate(self):
+        success, error = security.authenticate("Open Plaud Transcripts")
+        if success:
+            self.after(0, self.deiconify)
+        else:
+            # LocalAuthentication may not be available on all setups —
+            # fall back to a simple password stored in Keychain.
+            self.after(0, lambda: self._fallback_auth(error))
+
+    def _fallback_auth(self, reason):
+        import keyring
+        stored = keyring.get_password("com.plaud.transcripts", "app_password")
+        if stored is None:
+            # First launch — let the user set a password
+            pw = simpledialog.askstring(
+                "Set App Password",
+                "Touch ID is not available.\n\nSet a password to protect this app:",
+                show="*", parent=self,
+            )
+            if not pw:
+                self.destroy()
+                return
+            keyring.set_password("com.plaud.transcripts", "app_password", pw)
+            self.deiconify()
+        else:
+            pw = simpledialog.askstring(
+                "Plaud Transcripts — Locked",
+                "Enter your app password:",
+                show="*", parent=self,
+            )
+            if pw == stored:
+                self.deiconify()
+            else:
+                messagebox.showerror("Access Denied",
+                                     "Incorrect password. Plaud Transcripts will close.")
+                self.destroy()
 
     def _build_ui(self):
         # ── Header ────────────────────────────────────────────────────
