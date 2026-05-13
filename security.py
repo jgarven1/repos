@@ -17,6 +17,7 @@ APP_SUPPORT = pathlib.Path.home() / "Library" / "Application Support" / "Plaud"
 
 _KEYCHAIN_SERVICE = "com.plaud.transcripts"
 _KEYCHAIN_USER    = "session_encryption_key"
+_API_KEY_USER     = "anthropic_api_key"
 
 
 # ---------------------------------------------------------------------------
@@ -58,6 +59,31 @@ def get_accounts():
 def set_secure_permissions(path):
     """Restrict a file to owner read/write only (chmod 600)."""
     os.chmod(path, 0o600)
+
+
+# ---------------------------------------------------------------------------
+# Anthropic API key (stored in Keychain, never on disk)
+# ---------------------------------------------------------------------------
+
+def get_api_key():
+    """Retrieve the Anthropic API key from Keychain. Returns None if not set."""
+    import keyring
+    return keyring.get_password(_KEYCHAIN_SERVICE, _API_KEY_USER)
+
+
+def set_api_key(key):
+    """Store the Anthropic API key in Keychain."""
+    import keyring
+    keyring.set_password(_KEYCHAIN_SERVICE, _API_KEY_USER, key)
+
+
+def delete_api_key():
+    """Remove the Anthropic API key from Keychain."""
+    import keyring
+    try:
+        keyring.delete_password(_KEYCHAIN_SERVICE, _API_KEY_USER)
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------

@@ -227,23 +227,30 @@ class PlaudApp(tk.Tk):
         # ── Header ────────────────────────────────────────────────────
         header = tk.Frame(self, bg="#1a1a1a")
         header.grid(row=0, column=0, sticky="ew")
-
         title_frame = tk.Frame(header, bg="#1a1a1a")
         title_frame.pack(anchor="w", padx=20, pady=14)
-
         tk.Label(title_frame, text="🎙  Plaud Transcripts",
                  font=("Helvetica", 18, "bold"),
                  fg="white", bg="#1a1a1a").pack(side="left")
-
         tk.Label(title_frame, text="  Secure Terminal",
                  font=("Helvetica", 13, "bold"),
                  fg="#00cc44", bg="#1a1a1a").pack(side="left", padx=(8, 0))
 
-        # ── Body ──────────────────────────────────────────────────────
-        body = ttk.Frame(self, padding=20)
-        body.grid(row=1, column=0, sticky="nsew")
+        # ── Tabs ──────────────────────────────────────────────────────
+        notebook = ttk.Notebook(self)
+        notebook.grid(row=1, column=0, sticky="nsew", padx=0, pady=0)
 
-        # Accounts
+        self._build_tab_transcripts(notebook)
+        self._build_tab_claude(notebook)
+
+    # ------------------------------------------------------------------
+    # Tab 1 — Transcripts
+    # ------------------------------------------------------------------
+
+    def _build_tab_transcripts(self, notebook):
+        body = ttk.Frame(notebook, padding=20)
+        notebook.add(body, text="  Transcripts  ")
+
         ttk.Label(body, text="Accounts", font=("Helvetica", 13, "bold")).grid(
             row=0, column=0, columnspan=2, sticky="w", pady=(0, 4))
         ttk.Label(body, text="Double-click an account to view or edit details.",
@@ -264,20 +271,16 @@ class PlaudApp(tk.Tk):
         ttk.Separator(body, orient="horizontal").grid(
             row=4, column=0, columnspan=2, sticky="ew", pady=16)
 
-        # Export
         ttk.Label(body, text="Export", font=("Helvetica", 13, "bold")).grid(
             row=5, column=0, columnspan=2, sticky="w", pady=(0, 4))
-
         ttk.Label(body, text="Account:").grid(row=6, column=0, sticky="w")
         self.export_var = tk.StringVar()
         self.export_combo = ttk.Combobox(body, textvariable=self.export_var,
                                           state="readonly", width=28)
         self.export_combo.grid(row=6, column=1, sticky="ew", padx=(8, 0))
-
         self.export_btn = ttk.Button(body, text="Export New Transcripts",
                                       command=self._export)
         self.export_btn.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(10, 4))
-
         ttk.Button(body, text="Open Transcripts Folder",
                    command=self._open_folder).grid(
             row=8, column=0, columnspan=2, sticky="ew")
@@ -285,19 +288,95 @@ class PlaudApp(tk.Tk):
         ttk.Separator(body, orient="horizontal").grid(
             row=9, column=0, columnspan=2, sticky="ew", pady=16)
 
-        # Log
         ttk.Label(body, text="Activity Log", font=("Helvetica", 13, "bold")).grid(
             row=10, column=0, columnspan=2, sticky="w", pady=(0, 4))
-
         self.log = tk.Text(body, height=12, width=52, state="disabled",
                            font=("Courier", 10), bg="#f5f5f5", fg="#1a1a1a", relief="flat")
         scroll = ttk.Scrollbar(body, command=self.log.yview)
         self.log.configure(yscrollcommand=scroll.set)
         self.log.grid(row=11, column=0, sticky="nsew")
         scroll.grid(row=11, column=1, sticky="ns")
-
         ttk.Button(body, text="Clear Log", command=self._clear_log).grid(
             row=12, column=0, columnspan=2, sticky="e", pady=(6, 0))
+
+    # ------------------------------------------------------------------
+    # Tab 2 — Claude AI
+    # ------------------------------------------------------------------
+
+    def _build_tab_claude(self, notebook):
+        body = ttk.Frame(notebook, padding=20)
+        notebook.add(body, text="  Claude AI  ")
+
+        # API key section
+        ttk.Label(body, text="Anthropic API Key",
+                  font=("Helvetica", 13, "bold")).grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 4))
+
+        self.api_key_status = tk.StringVar()
+        self._refresh_api_key_status()
+        ttk.Label(body, textvariable=self.api_key_status,
+                  font=("Helvetica", 10)).grid(
+            row=1, column=0, columnspan=2, sticky="w", pady=(0, 6))
+
+        key_btns = ttk.Frame(body)
+        key_btns.grid(row=2, column=0, columnspan=2, sticky="w")
+        ttk.Button(key_btns, text="Set API Key",    command=self._set_api_key).pack(side="left", padx=(0, 6))
+        ttk.Button(key_btns, text="Remove API Key", command=self._remove_api_key).pack(side="left")
+
+        ttk.Separator(body, orient="horizontal").grid(
+            row=3, column=0, columnspan=2, sticky="ew", pady=16)
+
+        # Process section
+        ttk.Label(body, text="Process Transcripts",
+                  font=("Helvetica", 13, "bold")).grid(
+            row=4, column=0, columnspan=2, sticky="w", pady=(0, 4))
+        ttk.Label(body,
+                  text="Send unprocessed transcripts to Claude to extract\n"
+                       "summaries, action items, decisions and topics.",
+                  font=("Helvetica", 10), foreground="#555555", justify="left").grid(
+            row=5, column=0, columnspan=2, sticky="w", pady=(0, 8))
+
+        proc_row = ttk.Frame(body)
+        proc_row.grid(row=6, column=0, columnspan=2, sticky="ew")
+        ttk.Label(proc_row, text="Account:").pack(side="left")
+        self.proc_account_var = tk.StringVar()
+        self.proc_combo = ttk.Combobox(proc_row, textvariable=self.proc_account_var,
+                                        state="readonly", width=20)
+        self.proc_combo.pack(side="left", padx=(8, 0))
+
+        self.process_btn = ttk.Button(body, text="Process with Claude",
+                                       command=self._process_with_claude)
+        self.process_btn.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+
+        ttk.Separator(body, orient="horizontal").grid(
+            row=8, column=0, columnspan=2, sticky="ew", pady=16)
+
+        # Ask section
+        ttk.Label(body, text="Ask Your Meetings",
+                  font=("Helvetica", 13, "bold")).grid(
+            row=9, column=0, columnspan=2, sticky="w", pady=(0, 4))
+        ttk.Label(body,
+                  text='e.g. "What action items do I have from this week?"',
+                  font=("Helvetica", 10, "italic"), foreground="#555555").grid(
+            row=10, column=0, columnspan=2, sticky="w", pady=(0, 6))
+
+        self.question_var = tk.StringVar()
+        question_entry = ttk.Entry(body, textvariable=self.question_var,
+                                    width=44, font=("Helvetica", 11))
+        question_entry.grid(row=11, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        question_entry.bind("<Return>", lambda e: self._ask_claude())
+
+        self.ask_btn = ttk.Button(body, text="Ask Claude", command=self._ask_claude)
+        self.ask_btn.grid(row=12, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+
+        # Answer display
+        self.answer_box = tk.Text(body, height=12, width=52, state="disabled",
+                                   font=("Helvetica", 10), bg="#f0f7ff",
+                                   fg="#1a1a1a", relief="flat", wrap="word")
+        ans_scroll = ttk.Scrollbar(body, command=self.answer_box.yview)
+        self.answer_box.configure(yscrollcommand=ans_scroll.set)
+        self.answer_box.grid(row=13, column=0, sticky="nsew")
+        ans_scroll.grid(row=13, column=1, sticky="ns")
 
     # ------------------------------------------------------------------
     # Account management
@@ -309,8 +388,12 @@ class PlaudApp(tk.Tk):
         for a in accounts:
             self.account_box.insert(tk.END, f"  {a}")
         self.export_combo["values"] = accounts
-        if accounts and not self.export_var.get():
-            self.export_var.set(accounts[0])
+        self.proc_combo["values"]   = accounts
+        if accounts:
+            if not self.export_var.get():
+                self.export_var.set(accounts[0])
+            if not self.proc_account_var.get():
+                self.proc_account_var.set(accounts[0])
 
     def _selected_account(self):
         sel = self.account_box.curselection()
@@ -442,6 +525,96 @@ class PlaudApp(tk.Tk):
         folder = transcripts_dir(account)
         folder.mkdir(parents=True, exist_ok=True)
         subprocess.run(["open", str(folder)])
+
+    # ------------------------------------------------------------------
+    # Claude AI methods
+    # ------------------------------------------------------------------
+
+    def _refresh_api_key_status(self):
+        if security.get_api_key():
+            self.api_key_status.set("✓  API key saved securely in Keychain")
+        else:
+            self.api_key_status.set("✗  No API key set — add one below to enable Claude features")
+
+    def _set_api_key(self):
+        key = simpledialog.askstring(
+            "Set Anthropic API Key",
+            "Paste your Anthropic API key:\n(stored securely in macOS Keychain — never saved to disk)",
+            show="*", parent=self,
+        )
+        if not key or not key.strip():
+            return
+        key = key.strip()
+        if not key.startswith("sk-"):
+            messagebox.showwarning("Invalid key",
+                                   "Anthropic API keys start with 'sk-'. Please check and try again.",
+                                   parent=self)
+            return
+        security.set_api_key(key)
+        self._refresh_api_key_status()
+        self._log("✓ Anthropic API key saved to Keychain.")
+
+    def _remove_api_key(self):
+        if not messagebox.askyesno("Remove API Key",
+                                    "Remove the Anthropic API key from Keychain?",
+                                    parent=self):
+            return
+        security.delete_api_key()
+        self._refresh_api_key_status()
+        self._log("Anthropic API key removed.")
+
+    def _process_with_claude(self):
+        if not security.get_api_key():
+            messagebox.showinfo("No API Key",
+                                "Add your Anthropic API key first.", parent=self)
+            return
+        account = self.proc_account_var.get() or "default"
+        self.process_btn.configure(state="disabled", text="Processing…")
+        self._log(f"── Processing '{account}' transcripts with Claude ──")
+        threading.Thread(target=self._run_processing, args=(account,), daemon=True).start()
+
+    def _run_processing(self, account):
+        try:
+            import claude_processor
+            succeeded, failed = claude_processor.process_all_unprocessed(
+                account=account,
+                progress_cb=self._log,
+            )
+            self._log(f"── Done: {succeeded} processed, {failed} failed ──")
+        except Exception as exc:
+            self._log(f"✗ Processing error: {exc}")
+        finally:
+            self.after(0, lambda: self.process_btn.configure(
+                state="normal", text="Process with Claude"))
+
+    def _ask_claude(self):
+        question = self.question_var.get().strip()
+        if not question:
+            return
+        if not security.get_api_key():
+            messagebox.showinfo("No API Key",
+                                "Add your Anthropic API key first.", parent=self)
+            return
+        account = self.proc_account_var.get() or "default"
+        self.ask_btn.configure(state="disabled", text="Asking…")
+        self._set_answer("Thinking…")
+        threading.Thread(target=self._run_ask,
+                          args=(question, account), daemon=True).start()
+
+    def _run_ask(self, question, account):
+        try:
+            import claude_processor
+            answer = claude_processor.ask(question, account=account)
+        except Exception as exc:
+            answer = f"Error: {exc}"
+        self.after(0, lambda: self._set_answer(answer))
+        self.after(0, lambda: self.ask_btn.configure(state="normal", text="Ask Claude"))
+
+    def _set_answer(self, text):
+        self.answer_box.configure(state="normal")
+        self.answer_box.delete("1.0", tk.END)
+        self.answer_box.insert(tk.END, text)
+        self.answer_box.configure(state="disabled")
 
     # ------------------------------------------------------------------
     # Log helpers

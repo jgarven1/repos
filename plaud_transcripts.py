@@ -394,6 +394,7 @@ def export_transcript(page, label, file_id, index, total):
         dl.save_as(dest)
         mark_exported(file_id)
         log.info("[%d/%d] Saved → %s", index + 1, total, dest)
+        _auto_process(dest, index, total)
         return True
 
     except PWTimeoutError as exc:
@@ -419,7 +420,23 @@ def export_transcript(page, label, file_id, index, total):
     dest.write_text(text, encoding="utf-8")
     mark_exported(file_id)
     log.info("[%d/%d] Saved (scraped) → %s", index + 1, total, dest)
+    _auto_process(dest, index, total)
     return True
+
+
+def _auto_process(transcript_path, index, total):
+    """Send a newly saved transcript to Claude if an API key is configured."""
+    try:
+        import claude_processor
+        if not claude_processor.has_api_key():
+            return
+        if claude_processor.is_processed(transcript_path):
+            return
+        log.info("[%d/%d] Processing with Claude…", index + 1, total)
+        claude_processor.process_transcript(transcript_path)
+        log.info("[%d/%d] Claude processing complete", index + 1, total)
+    except Exception as exc:
+        log.warning("[%d/%d] Claude processing skipped: %s", index + 1, total, exc)
 
 
 # ---------------------------------------------------------------------------
