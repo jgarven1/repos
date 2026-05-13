@@ -290,7 +290,7 @@ class PlaudApp(tk.Tk):
             row=10, column=0, columnspan=2, sticky="w", pady=(0, 4))
 
         self.log = tk.Text(body, height=12, width=52, state="disabled",
-                           font=("Courier", 10), bg="#f5f5f5", relief="flat")
+                           font=("Courier", 10), bg="#f5f5f5", fg="#1a1a1a", relief="flat")
         scroll = ttk.Scrollbar(body, command=self.log.yview)
         self.log.configure(yscrollcommand=scroll.set)
         self.log.grid(row=11, column=0, sticky="nsew")
