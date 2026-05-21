@@ -13,8 +13,7 @@ def sanitize(name: str) -> str:
 
 def get_job_postings(page: Page) -> list[dict]:
     """Navigate to the Recruiting module and return a list of active job postings."""
-    # Adjust this URL path once you confirm the exact Paylocity routing for your account
-    page.goto(f"{config.PAYLOCITY_URL}/Recruiting")
+    page.goto(config.TALENT_URL)
     page.wait_for_load_state("networkidle")
 
     postings = []

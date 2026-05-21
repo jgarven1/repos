@@ -9,3 +9,4 @@ OUTPUT_DIR = os.getenv("OUTPUT_DIR", "./output")
 
 COMPANY_ID = "188208"
 PAYLOCITY_URL = "https://access.paylocity.com"
+TALENT_URL = "https://talent.paylocity.com/Talent/Jobs"
