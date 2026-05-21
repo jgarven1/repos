@@ -7,7 +7,8 @@ def login(page: Page) -> None:
     page.goto(config.PAYLOCITY_URL)
     page.wait_for_load_state("networkidle")
 
-    # Fill credentials
+    # Fill credentials — Company ID is the first field on Paylocity's login page
+    page.fill('input[name="CompanyId"], input[id*="company"], input[placeholder*="Company"]', config.COMPANY_ID)
     page.fill('input[name="Username"], input[id*="user"], input[type="email"]', config.USERNAME)
     page.fill('input[name="Password"], input[id*="pass"], input[type="password"]', config.PASSWORD)
     page.click('button[type="submit"], input[type="submit"]')
