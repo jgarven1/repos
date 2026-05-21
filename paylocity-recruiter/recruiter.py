@@ -17,11 +17,12 @@ def get_job_postings(page: Page) -> list[dict]:
     page.wait_for_load_state("networkidle")
 
     postings = []
-    # Each job row has a title link — grab all anchor tags in tbody that look like job titles
+    # Wait for the table rows to be populated by JavaScript before reading
+    page.wait_for_selector("table tbody tr td a", state="visible", timeout=15000)
     links = page.query_selector_all("table tbody tr td a")
     for link in links:
-        title = link.inner_text().strip()
-        href = link.get_attribute("href")
+        title = (link.text_content() or "").strip()
+        href = link.get_attribute("href") or ""
         if title and href:
             postings.append({
                 "title": title,
