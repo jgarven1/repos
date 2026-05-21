@@ -30,7 +30,7 @@ def main() -> None:
 
         print(f"\nProcessing: {job['title']}")
         page.goto(job["url"])
-        page.wait_for_load_state("networkidle")
+        page.wait_for_load_state("load")
 
         applicants = recruiter.get_applicants(page)
         print(f"Found {len(applicants)} applicant(s).\n")

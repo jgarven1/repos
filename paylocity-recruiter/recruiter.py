@@ -19,9 +19,9 @@ def get_job_postings(page: Page) -> list[dict]:
     page.goto(config.TALENT_URL)
     _wait_for_table(page)
 
-    # Use JS to extract text + href from every anchor in the table body
+    # Target only the 4th td (Title column) to avoid picking up "New" count links
     postings = page.evaluate("""() => {
-        const links = document.querySelectorAll('table tbody tr td a');
+        const links = document.querySelectorAll('table tbody tr td:nth-child(4) a');
         return Array.from(links).map(a => ({
             title: a.innerText.trim(),
             href: a.getAttribute('href') || ''
