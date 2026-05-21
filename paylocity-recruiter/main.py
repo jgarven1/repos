@@ -19,7 +19,7 @@ import recruiter
 
 def main() -> None:
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=False)  # headed so you can complete MFA
+        browser = pw.chromium.launch(headless=False, channel="chrome")
         context = browser.new_context(accept_downloads=True)
         page = context.new_page()
 
