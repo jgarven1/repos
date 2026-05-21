@@ -1,6 +1,4 @@
-import os
 import re
-import time
 from pathlib import Path
 from playwright.sync_api import Page, Download
 
@@ -11,30 +9,37 @@ def sanitize(name: str) -> str:
     return re.sub(r'[<>:"/\\|?*]', "_", name).strip()
 
 
-def get_job_postings(page: Page) -> list[dict]:
-    """Navigate to the Recruiting module and return a list of active job postings."""
-    page.goto(config.TALENT_URL)
-    page.wait_for_load_state("networkidle")
+def _wait_for_table(page: Page) -> None:
+    # talent.paylocity.com never reaches networkidle — wait for load then the table element
+    page.wait_for_load_state("load")
+    page.wait_for_selector("table tbody tr", state="visible", timeout=20000)
 
-    postings = []
-    # Wait for the table rows to be populated by JavaScript before reading
-    page.wait_for_selector("table tbody tr td a", state="visible", timeout=15000)
-    links = page.query_selector_all("table tbody tr td a")
-    for link in links:
-        title = (link.text_content() or "").strip()
-        href = link.get_attribute("href") or ""
-        if title and href:
-            postings.append({
-                "title": title,
-                "url": href if href.startswith("http") else f"https://talent.paylocity.com{href}",
-            })
-    return postings
+
+def get_job_postings(page: Page) -> list[dict]:
+    page.goto(config.TALENT_URL)
+    _wait_for_table(page)
+
+    # Use JS to extract text + href from every anchor in the table body
+    postings = page.evaluate("""() => {
+        const links = document.querySelectorAll('table tbody tr td a');
+        return Array.from(links).map(a => ({
+            title: a.innerText.trim(),
+            href: a.getAttribute('href') || ''
+        })).filter(item => item.title && item.href);
+    }""")
+
+    return [
+        {
+            "title": p["title"],
+            "url": p["href"] if p["href"].startswith("http") else f"https://talent.paylocity.com{p['href']}",
+        }
+        for p in postings
+    ]
 
 
 def select_job_interactively(postings: list[dict]) -> dict:
-    """Print available postings and let the user pick one."""
     if not postings:
-        raise RuntimeError("No job postings found. Check the selector in get_job_postings().")
+        raise RuntimeError("No job postings found — check selectors in get_job_postings().")
 
     print("\nAvailable job postings:")
     for i, job in enumerate(postings):
@@ -48,40 +53,39 @@ def select_job_interactively(postings: list[dict]) -> dict:
 
 
 def get_applicants(page: Page) -> list[dict]:
-    """Return applicant entries visible on the current job posting page."""
-    page.wait_for_load_state("networkidle")
-    applicants = []
-    rows = page.query_selector_all("table tbody tr, .applicant-row, [data-testid*='applicant']")
-    for row in rows:
-        name_el = row.query_selector("td:first-child, .applicant-name, [data-testid*='name']")
-        if name_el:
-            applicants.append({
-                "name": name_el.inner_text().strip(),
-                "element": row,
-            })
-    return applicants
+    _wait_for_table(page)
+
+    applicants = page.evaluate("""() => {
+        const rows = document.querySelectorAll('table tbody tr');
+        return Array.from(rows).map(row => {
+            const link = row.querySelector('td a');
+            return link ? { name: link.innerText.trim(), href: link.getAttribute('href') || '' } : null;
+        }).filter(Boolean).filter(a => a.name && a.href);
+    }""")
+
+    return [
+        {
+            "name": a["name"],
+            "url": a["href"] if a["href"].startswith("http") else f"https://talent.paylocity.com{a['href']}",
+        }
+        for a in applicants
+    ]
 
 
 def download_applicant_files(page: Page, applicant: dict, job_title: str) -> None:
-    """Open an applicant's submission and download their Application PDF and Resume."""
     name = sanitize(applicant["name"])
     job = sanitize(job_title)
     dest = Path(config.OUTPUT_DIR) / job / name
     dest.mkdir(parents=True, exist_ok=True)
 
-    # Click into the applicant's detail view
-    applicant["element"].click()
-    page.wait_for_load_state("networkidle")
+    page.goto(applicant["url"])
+    page.wait_for_load_state("load")
 
     _download_file(page, dest, "application.pdf", label="Application PDF",
                    trigger_selector='a:has-text("Application"), button:has-text("Application PDF"), [data-testid*="application"]')
 
     _download_file(page, dest, "resume.pdf", label="Resume",
                    trigger_selector='a:has-text("Resume"), button:has-text("Resume"), [data-testid*="resume"]')
-
-    # Go back to the applicant list
-    page.go_back()
-    page.wait_for_load_state("networkidle")
 
 
 def _download_file(page: Page, dest: Path, filename: str, label: str, trigger_selector: str) -> None:
