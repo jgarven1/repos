@@ -29,7 +29,8 @@ def main() -> None:
         job = recruiter.select_job_interactively(postings)
 
         print(f"\nProcessing: {job['title']}")
-        job["element"].click()
+        page.goto(job["url"])
+        page.wait_for_load_state("networkidle")
 
         applicants = recruiter.get_applicants(page)
         print(f"Found {len(applicants)} applicant(s).\n")

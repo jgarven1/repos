@@ -17,14 +17,15 @@ def get_job_postings(page: Page) -> list[dict]:
     page.wait_for_load_state("networkidle")
 
     postings = []
-    # Collect job posting rows — selectors will need tuning after inspecting the live page
-    rows = page.query_selector_all("table tbody tr, [data-testid*='job'], .job-posting-row")
-    for row in rows:
-        title_el = row.query_selector("td:first-child, .job-title, [data-testid*='title']")
-        if title_el:
+    # Each job row has a title link — grab all anchor tags in tbody that look like job titles
+    links = page.query_selector_all("table tbody tr td a")
+    for link in links:
+        title = link.inner_text().strip()
+        href = link.get_attribute("href")
+        if title and href:
             postings.append({
-                "title": title_el.inner_text().strip(),
-                "element": row,
+                "title": title,
+                "url": href if href.startswith("http") else f"https://talent.paylocity.com{href}",
             })
     return postings
 
