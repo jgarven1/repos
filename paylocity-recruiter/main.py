@@ -20,10 +20,14 @@ import recruiter
 def main() -> None:
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=False, channel="chrome")
-        context = browser.new_context(accept_downloads=True)
+        session = auth.SESSION_FILE
+        context = browser.new_context(
+            accept_downloads=True,
+            storage_state=str(session) if session.exists() else None,
+        )
         page = context.new_page()
 
-        auth.login(page)
+        auth.ensure_logged_in(context, page)
 
         postings = recruiter.get_job_postings(page)
         job = recruiter.select_job_interactively(postings)
