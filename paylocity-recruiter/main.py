@@ -35,12 +35,18 @@ def main() -> None:
         applicants = recruiter.get_applicants(page)
         print(f"Found {len(applicants)} applicant(s).\n")
 
+        first = True
         for i, applicant in enumerate(applicants, 1):
             print(f"[{i}/{len(applicants)}] {applicant['name']}")
-            recruiter.download_applicant_files(page, applicant, job["title"])
+            if first:
+                recruiter.download_applicant_files(page, applicant, job["title"], pause=True)
+                first = False
+            else:
+                recruiter.download_applicant_files(page, applicant, job["title"])
 
+        input("\nAll done — press Enter to close the browser.")
         browser.close()
-        print("\nDone.")
+        print("Done.")
 
 
 if __name__ == "__main__":

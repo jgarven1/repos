@@ -72,7 +72,7 @@ def get_applicants(page: Page) -> list[dict]:
     ]
 
 
-def download_applicant_files(page: Page, applicant: dict, job_title: str) -> None:
+def download_applicant_files(page: Page, applicant: dict, job_title: str, pause: bool = False) -> None:
     name = sanitize(applicant["name"])
     job = sanitize(job_title)
     dest = Path(config.OUTPUT_DIR) / job / name
@@ -80,6 +80,11 @@ def download_applicant_files(page: Page, applicant: dict, job_title: str) -> Non
 
     page.goto(applicant["url"])
     page.wait_for_load_state("load")
+
+    if pause:
+        print(f"\n  [DEBUG] Navigated to: {page.url}")
+        input("  [DEBUG] Look at the browser, take a screenshot, then press Enter to continue...")
+
 
     _download_file(page, dest, "application.pdf", label="Application PDF",
                    trigger_selector='a:has-text("Application"), button:has-text("Application PDF"), [data-testid*="application"]')
