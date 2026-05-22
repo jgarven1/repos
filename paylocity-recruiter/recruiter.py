@@ -88,7 +88,15 @@ def list_applicants(page: Page, job: dict) -> list[dict]:
     NOTE: applicant row selector is still a placeholder — inspect the
     applicant table after navigating to a job and update it here.
     """
-    page.goto(job["url"], timeout=config.PAGE_TIMEOUT_MS)
+    # Go back to the Jobs Dashboard and click the link — direct URL navigation
+    # doesn't work because Paylocity is a single-page app.
+    go_to_recruiting(page)
+    job_id = re.search(r'/job-folder/(\d+)', job["url"])
+    if job_id:
+        link = page.locator(f"a.no-underline[href*='job-folder/{job_id.group(1)}']").first
+    else:
+        link = page.locator(f"a.no-underline[title='{job['title']}']").first
+    link.click()
     page.wait_for_load_state("networkidle", timeout=config.PAGE_TIMEOUT_MS)
     time.sleep(1)
 
