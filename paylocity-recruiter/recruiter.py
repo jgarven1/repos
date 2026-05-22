@@ -34,29 +34,24 @@ def go_to_recruiting(page: Page) -> None:
 
 def list_job_postings(page: Page) -> list[dict]:
     """
-    Return a list of open job postings as:
-      [{"title": str, "element": Locator}, ...]
-
-    UPDATE the selector below to match the actual job row in Paylocity.
+    Return a list of job postings scraped from the Jobs Dashboard.
+    Each entry: {"title": str, "url": str}
     """
     go_to_recruiting(page)
 
-    # Placeholder selector — inspect the job list page and replace this
-    job_rows = page.locator(
-        ".job-posting-row, [data-testid='job-row'], tr.job-row"
-    )
+    links = page.locator("a.no-underline[href*='job-folder']")
     try:
-        job_rows.first.wait_for(timeout=config.PAGE_TIMEOUT_MS)
+        links.first.wait_for(timeout=config.PAGE_TIMEOUT_MS)
     except PWTimeoutError:
-        raise RuntimeError(
-            "No job postings found. Check the selector in recruiter.py:list_job_postings()."
-        )
+        raise RuntimeError("No job postings found on the Jobs Dashboard.")
 
     jobs = []
-    for i in range(job_rows.count()):
-        row = job_rows.nth(i)
-        title = row.inner_text().strip().splitlines()[0]
-        jobs.append({"title": title, "index": i, "locator": row})
+    for i in range(links.count()):
+        link = links.nth(i)
+        title = link.get_attribute("title") or link.inner_text().strip()
+        url   = link.get_attribute("href")
+        if title and url:
+            jobs.append({"title": title, "url": url})
 
     return jobs
 
@@ -87,16 +82,17 @@ def select_job(page: Page) -> dict:
 
 def list_applicants(page: Page, job: dict) -> list[dict]:
     """
-    Click into the job posting and return a list of applicants as:
-      [{"name": str, "locator": Locator}, ...]
+    Navigate to the job posting and return a list of applicants.
+    Each entry: {"name": str, "locator": Locator}
 
-    UPDATE the selectors below after inspecting the applicant table.
+    NOTE: applicant row selector is still a placeholder — inspect the
+    applicant table after navigating to a job and update it here.
     """
-    job["locator"].click()
+    page.goto(job["url"], timeout=config.PAGE_TIMEOUT_MS)
     page.wait_for_load_state("networkidle", timeout=config.PAGE_TIMEOUT_MS)
     time.sleep(1)
 
-    # Placeholder selector — inspect the applicant list and replace this
+    # Placeholder — inspect the applicant list and update this selector
     rows = page.locator(
         ".applicant-row, [data-testid='applicant-row'], tr.applicant"
     )
@@ -104,14 +100,15 @@ def list_applicants(page: Page, job: dict) -> list[dict]:
         rows.first.wait_for(timeout=config.PAGE_TIMEOUT_MS)
     except PWTimeoutError:
         raise RuntimeError(
-            "No applicants found. Check the selector in recruiter.py:list_applicants()."
+            "No applicants found. Inspect the applicant table and update "
+            "the selector in recruiter.py:list_applicants()."
         )
 
     applicants = []
     for i in range(rows.count()):
         row = rows.nth(i)
         name = row.inner_text().strip().splitlines()[0]
-        applicants.append({"name": name, "index": i, "locator": row})
+        applicants.append({"name": name, "locator": row})
 
     return applicants
 
