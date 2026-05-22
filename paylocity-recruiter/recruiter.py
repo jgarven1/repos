@@ -23,18 +23,9 @@ def safe_name(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 def go_to_recruiting(page: Page) -> None:
-    """Click into the Recruiting module from the Paylocity nav."""
-    try:
-        # Try direct URL first
-        page.goto(
-            config.PAYLOCITY_URL + "/Recruiting/",
-            timeout=config.PAGE_TIMEOUT_MS,
-        )
-        page.wait_for_load_state("networkidle", timeout=config.PAGE_TIMEOUT_MS)
-    except PWTimeoutError:
-        # Fall back to clicking the nav item
-        page.click("a:has-text('Recruiting'), [href*='Recruiting']", timeout=8_000)
-        page.wait_for_load_state("networkidle", timeout=config.PAGE_TIMEOUT_MS)
+    """Navigate directly to the Paylocity Jobs Dashboard."""
+    page.goto(config.JOBS_URL, timeout=config.PAGE_TIMEOUT_MS)
+    page.wait_for_load_state("networkidle", timeout=config.PAGE_TIMEOUT_MS)
 
 
 # ---------------------------------------------------------------------------
