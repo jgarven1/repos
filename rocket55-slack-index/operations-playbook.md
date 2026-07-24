@@ -2,6 +2,8 @@
 
 This is the deep dive: **where work and files live, how contracts/SOWs are handled, what templates exist, which processes repeat, and how accounts are managed.** Everything here is drawn from the messages; representative examples are cited as `[channel, date]`.
 
+> **Update — Canvas contents now included.** The bodies of the client "Overview"/"Resources" Canvases (missing from the export) were retrieved live from Slack. They are primary-source evidence for almost everything below; see **`canvas-appendix.md`** for the full text and the standardized template anatomy. Findings from the Canvases are marked **[Canvas]**.
+
 ---
 
 ## 1. Systems of record — where things get saved
@@ -28,11 +30,12 @@ Highest Accelo activity (proxy for actively-tracked delivery): `frsecure` (61), 
 ### 1Password — the credential vault
 All client logins live in **1Password** ("1Pass"): *"they're in 1pass!"* `[renew-all]`, *"I got credentials saved in 1Password for the live site"* `[brigade-hometown-exteriors-web]`. The team **migrated from LastPass** in 2025 (`help-1password`, `FC: Help requests tracker`) — a transition still surfacing edge cases (recovery keys, vault ownership).
 
-### Slack Canvas / "Channel Overview" — the per-client quick reference
-Each major client channel has a pinned **Canvas** ("channel overview") used as the fast-reference hub:
+### Slack Canvas / "Channel Overview" — the per-client quick reference **[Canvas]**
+**Every active client has a pinned Canvas** — titled `<Client> Overview`, `Channel Overview`, `Resources`, or `Important Links` (~40 of them; full inventory in `canvas-appendix.md`). It is the single fastest-reference hub and follows a **standardized skeleton**: Team (named discipline owners) → Key Dates (Internal/Client Kickoff, Roadmap) → Client Assets → Key links grouped **ADMIN / GENERAL / PAID / SXO / RevOps / Social / Web** → an **Access checklist** (Ads, GA, LinkedIn, GTM, Search Console, Website) → Client Notes.
 - *"it's saved in the channel overview! [Internal Sales Handoff]"* `[halco, 2026-01-12]`
 - *"here's the 2026 budget. i also put it in the ispiri overview canvas"* `[ispiri-all]`
-- The 27 `FC:...Overview` "channels" in the export are these Canvases (their bodies aren't exported, only titles/links). Titles alone are a map: *Atwell Overview, Toppan Merrill Overview, Gougeon Brothers Overview, Maryland Oncology Overview, Snap Fitness, Ecoflix Resources, Upcoming Clients & Work, Transition List (who do I need to meet with), Help requests tracker.*
+- **"Mission Control"** is a **cloned per-client tracker spreadsheet** — the identical tab `gid=1509272238` appears on Atwell, Ispiri, Toppan Merrill, Maryland Oncology, and Turn Style, i.e. a master template duplicated for each account.
+- The template is **adapted for regulated clients** — Maryland Oncology's Canvas adds a **"HIPAA Compliance: Advertising & Data"** doc.
 
 ### The website delivery stack
 - **WordPress** (client sites) hosted on **Kinsta**; **SendGrid**/SMTP for transactional mail; **Gravity Forms** for form capture — e.g. launch checklist in `[amsoil-aerospace-web-build, 2026-03-12]`, SMTP/SendGrid setup in `[gerbig-web, 2026-03-16]`.
@@ -51,10 +54,10 @@ There is no single "contracts channel"; scoping happens **inside each account**,
 - **SOW / scope** talk clusters in `mhub-web`, `ecowater-admin`, `big-blue-boxes-all`, `delta-dental-all`, `mmt-web`, `renew-all`, `anderson_manufacturing-web`, `cpc-all`.
 - **Proposals** are frequent (162 keyword hits) — top: `prinsco-water-table-podcast`, `atwell`, `blaine-brothers`, `frsecure`, `polywater-all`, `sunrise-all`. Proposals are often PDFs saved to Drive: *"Atwell _ HubSpot Onboarding Proposal_LL.pdf"* `[atwell, 2026-07-23]`.
 - **Pricing is an open, recurring judgment call**, not a fixed rate card: *"I've adjusted the proposal to only include phase 1… I'm not sure how much we should charge to make money on this project though"* `[atwell, 2026-07-14]`.
-- **Contract tooling is consolidating on PandaDoc** (integrated with HubSpot), pending legal review: *"We're migrating to PandaDoc, which integrates with HubSpot. Waiting on [name] to finish up work with our legal counsel"* `[temp-hubspot-implement, 2026-01-05]`.
+- **Proposal tooling is Proposify** for client-facing proposals (`rocket55.proposify.com`, on FRSecure and Work Smart IT overviews) **[Canvas]**; **PandaDoc** is being adopted for *internal sales-ops* documents, integrated with HubSpot, pending legal review: *"We're migrating to PandaDoc… Waiting on [name] to finish up work with our legal counsel"* `[temp-hubspot-implement, 2026-01-05]`.
 - **Scope changes are tracked and communicated**: *"the scope is going down to $4k/month so we will be doing…"* `[ecowater-all, 2026-03-31]`. Budget/scope is the single most-discussed operational topic (799 keyword hits), heaviest in `metro-state-all`, `wagner-all`, `nura-clinics-and-cpi-all`, `tsr-injury-law`, `university-athlete20251210`, `toppan-web`, `ecowater-admin`.
 
-**Gap worth flagging:** signed contracts/MSAs themselves don't clearly live in one referenced place in Slack — the conversation is about *proposals* and *scope*, with PandaDoc as the emerging home. Where fully-executed agreements are archived is not evidenced here.
+**Where signed agreements live (gap closed by Canvas access):** executed contracts **are** archived — in the client's **Google Drive folder, linked from the overview Canvas**. The `security-studio` "Important Resources" Canvas lists a **Signed MSA** (Drive file) and **Signed SOW** (Google Doc) right at the top, alongside the Google folder, roadmap, and kickoff doc **[Canvas]**. The recurring risk isn't storage but *starting before signature* — e.g. CPC: *"SOW is shared, going to start work with the verbal agreement"* **[Canvas, Weekly Pod Meeting]**.
 
 ---
 
@@ -71,6 +74,8 @@ Templates are real and referenced by name (248 keyword hits):
 
 The heaviest "template" channel is `university-athlete20251210` (81 hits) — this looks like an email/asset-template–heavy engagement.
 
+**The standardized artifact set [Canvas].** Beyond keyword hits, the Canvases reveal a consistent, reused library of per-client documents: **Mission Control** tracker (cloned template), **Internal Sales Handoff / Handoff Brief**, **Marketing Plan Blueprint**, **Discovery + Kickoff Call Agenda**, **Kickoff Deck** (Beautiful.ai), **Keyword Map**, **GBP Assessment**, **Technical SXO/Indexability Assessment**, **Reporting Dashboard** (Looker), **Ongoing Agenda/Notes** (Notion), **Asset Tracker**, **Campaign Plan** (Paid), **RevOps Technical Roadmap**, **Social Media Framework + Calendar**, and for web: **Web Project Brief / Timeline (TomsPlanner) / Questionnaire**. Account-ops templates: the **client Scorecard**, **OOO Coverage Plan**, and **Transition List** (see §4–§5).
+
 ---
 
 ## 4. Repeatable processes
@@ -85,6 +90,8 @@ Process language shows up 425 times; the clearest repeatable playbooks:
 6. **Time-logging hygiene.** Documented best-practices to avoid time landing as non-billable `[general, 2026-01-27]`.
 7. **Website launch process.** A repeatable launch sequence (SendGrid From-email verification, Gravity Forms fallback, credentials to 1Password) `[amsoil-aerospace-web-build]`, `[brigade-hometown-exteriors-web]`.
 8. **Internal system migration (its own project).** `temp-hubspot-implement` documents R55 moving sales ops off Salesforce onto HubSpot — integration shutoff, flat-file/data-loader migration, exclusion rules, PandaDoc for docs, Zoom scheduler, brand/segmentation cleanup. A good template for how they run a platform migration.
+9. **Weekly pod cadence on EOS/Traction [Canvas].** The industrial-manufacturing pod's **"Weekly Pod Meeting"** Canvas is a classic EOS Level‑10 agenda: **Scorecard** review → **Issues list (IDS: Identify, Discuss, Solve)** → **at-risk/health flags** (clients trending red on budget/scope/satisfaction/churn) → strategy discussions → **growth/upsell**. Clients also get individual **weekly scorecards** (e.g. Thern: goal / this-week / 4-wk avg / miss-streak / 🟢🟡🔴 per metric).
+10. **Emerging: Claude Projects as a per-project knowledge base [Canvas].** A PM notes rolling out, "across all projects," a project-specific Claude Project connected to email, Slack, and Fathom to house all project knowledge for recaps, status drafts, and search `[mmt-web "Latest Status Report"]`.
 
 ---
 
@@ -93,7 +100,8 @@ Process language shows up 425 times; the clearest repeatable playbooks:
 - **Pod / team model under Account Directors.** New hires are announced into named teams — "joining Kaitlyn's team as a Client Success Coordinator," "Sr. Client Success Manager," and an Account Director for **"Consumer Lifestyle"** reporting to Devon `[general]`. Explicit **PODs** exist (`industrial-manufacturing-pod-4`, `-pod-5`, "POD 3," `Weekly Pod Meeting`).
 - **Roles seen:** Account Director, (Sr.) Client Success Manager, Client Success Coordinator, Lead/Sr. Web Project Manager, (Sr.) Digital Project Manager, VP of Web, strategists (SEO/SXO, Paid, Social, Content, UX), designers, developers, Director of SEO & AI Search (new hire, Jul 2026), Director of Content & Strategic Initiatives.
 - **Master account list** is the ownership source of truth — used to reassign a departing employee's accounts: *"can we make sure all of Ellie's tasks are reassigned today based on the master account list?"* `[pm-am-resourcing, 2026-01-15]`.
-- **Formal client transitions.** A dedicated **"Transition List (who do I need to meet with)"** Canvas exists; accounts move between managers deliberately (e.g., NAMSA transitioning Emma → Evan `[namsa-all, 2026-01-20]`; a "client transition tracker" spreadsheet `[cpc-all, 2026-05-18]`).
+- **Formal client transitions [Canvas].** The **"Transition List (who do I need to meet with)"** Canvas is the handoff SOP: for each incoming owner (Evan, Emma, Kiley, Zander, Nick) it lists the outgoing owner to meet and each client to transition, with checkboxes. Accounts move deliberately (e.g., NAMSA transitioning Emma → Evan `[namsa-all, 2026-01-20]`; a "client transition tracker" spreadsheet `[cpc-all, 2026-05-18]`). Live account moves are tracked in the pod meeting (Rayus → PM Jason; C2 → PM Rachel / CSM Trey; MN Oncology off-boarding).
+- **Client health & staffing flags [Canvas].** The pod meeting explicitly surfaces coverage risk ("Aaron's coverage of Kiley accounts is an orange flag"; "concerned on Prinsco coverage — should Evan be interim paid strategist?") and relationship risk (CPC "extremely strained").
 - **Business reviews.** Periodic account business reviews (YoY performance) with client leadership, e.g. `[nura-clinics-and-cpi-all, 2026-04-23]`.
 - **Partner / white-label relationships.** R55 works alongside other agencies: **obviouslee** (`team-sds-obviouslee`, `obviouslee-admin`, "obviouslee process doc"), **Bald** (creative/social playbooks for EcoWater), **OM Digital** (Bark). The `client_*_rocket55` channels (Bark, Sewing Down South, Streamsong) are shared channels where the client/partner is present.
 

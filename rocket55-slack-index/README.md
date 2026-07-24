@@ -18,6 +18,7 @@ This is an **index** of the Slack export — a map that separates *signal* (clie
 |---|---|
 | **`00-executive-summary.md`** | The headline findings — signal vs. noise, and the answer to "where does everything get saved?" Start here. |
 | **`operations-playbook.md`** | The deep dive you asked for: systems of record, contracts/SOWs, templates, repeatable processes, and how accounts are managed. |
+| **`canvas-appendix.md`** | Primary-source contents of the client "Overview" Canvases, retrieved live from Slack (they were missing from the export). The standardized client template lives here. |
 | **`collaboration.md`** | How the teams are structured and how they collaborate around each client. |
 | **`clients.md`** | Roster of ~165 client accounts, sorted by activity, with channel names and engagement type. |
 | **`channel-index.md`** | Every meaningful channel, grouped and classified, with people, storage links, and signal flags. |
@@ -39,6 +40,6 @@ Rocket55 uses a **consistent channel naming convention**, which is itself a find
 ## Method & limitations
 
 - Counts and links were extracted mechanically; the narrative was written after reading the highest-signal channels directly.
-- **Canvas and List *bodies* are not in the export** — only their titles and download links (which need a live Slack token). Where a message says "was mentioned in a canvas," the content itself is not recoverable here.
+- **Canvas bodies were not in the export** (only titles/links). They were later **retrieved live via authorized read-only Slack access** and written up in `canvas-appendix.md` — this is the richest single source in the folder. List *history* (e.g. the Help-requests tracker) still requires a live token and is not fully reproduced.
 - Message *files* (uploaded PDFs/images) are referenced by URL only; the binaries are not included.
 - "Signal flags" (SOW, contract, template, etc.) are keyword hits — useful as a heat-map, not a precise count of real contracts.

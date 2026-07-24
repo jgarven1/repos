@@ -27,19 +27,22 @@ A small set of **internal channels is high-signal for *process*** rather than fo
 | **Figma** | Design & dev **handoff** for web builds. 297 links. | Strong |
 | **1Password** ("1Pass") | **Credential vault** for all client logins (migrated *from* LastPass mid-2025). | Strong |
 | **Slack Canvas / "Channel Overview"** | Per-client **quick-reference hub** pinned to the channel (budgets, sales handoff, links, notes). | Strong |
-| **HubSpot** (+ **PandaDoc**, **QuickBooks**) | Marketing automation/CRM for clients; PandaDoc for proposals/contracts; QuickBooks for invoicing. | Strong (client MA work) |
+| **HubSpot** (+ **PandaDoc**, **QuickBooks**) | Marketing automation/CRM for clients; PandaDoc for internal sales-ops docs; QuickBooks for invoicing. | Strong (client MA work) |
+| **Proposify** | Client-facing **proposals** (`rocket55.proposify.com`). | Strong |
+| **Notion** (`rocket55.notion.site`) | Ongoing client notes / status. | Strong |
 | **WordPress** + **Kinsta** (hosting), **SendGrid** (email), **Gravity Forms** | The website delivery stack. | Strong |
 | **Looker / (Google) Data Studio** | Client **reporting** dashboards. | Strong |
-| **Beautiful.ai / Canva** | Client-facing decks & recaps. | Moderate |
-| **Asana**, **Trello**, **Jira**, **Notion**, **SharePoint** | Client-*owned* systems R55 works inside on specific accounts. | Situational |
+| **Fathom** (+ Fireflies) | Meeting/call **recordings & summaries**, linked from client Canvases. | Strong |
+| **Beautiful.ai / Gamma / Canva** | Client-facing decks & recaps. | Moderate |
+| **TomsPlanner** (web timelines), **Canto** (client DAM), **Asana**, **Trello**, **Jira**, **SharePoint** | Web-project or client-*owned* systems used on specific accounts. | Situational |
 
 ## The five things you asked about
 
-1. **Where things get saved** → Accelo (work) + Google Drive "client folders" (docs) + 1Password (logins) + a Slack Canvas per client. Details in the playbook §1.
-2. **Contracts / SOWs** → Discussed in `-web` and `-admin` channels; scoping and pricing debates are frequent ("not sure how much we should charge to make money on this project"). Proposals increasingly run through **PandaDoc**. Playbook §2.
-3. **Templates** → A real library exists: **onboarding templates** (per discipline), **social dashboard template**, **reporting template**, **kickoff docs**, **coverage docs**. Playbook §3.
-4. **Repeatable processes** → Sales→delivery handoff, client onboarding, monthly reporting, resourcing/capacity planning, OOO coverage, and time-logging best practices are all documented and repeated. Playbook §4.
-5. **Account management** → A **pod/team model** under Account Directors, tracked against a **"master account list,"** with formal **client transitions** when people leave. Playbook §5 and `collaboration.md`.
+1. **Where things get saved** → Accelo (work) + Google Drive "client folders" (docs) + 1Password (logins) + a standardized Slack Canvas per client. Playbook §1; template anatomy in `canvas-appendix.md`.
+2. **Contracts / SOWs** → **Signed MSAs and SOWs live in the client's Google Drive folder, linked from the overview Canvas.** Proposals run through **Proposify** (client-facing) and **PandaDoc** (internal sales ops). Scoping/pricing debates are frequent ("not sure how much we should charge to make money on this project"). Playbook §2.
+3. **Templates** → A real, standardized library: the **client-overview Canvas template**, a cloned **"Mission Control"** tracker, **onboarding/access checklist**, **kickoff & discovery agendas**, **keyword maps**, **reporting dashboards**, **social framework**, **scorecards**, **coverage docs**. Playbook §3, appendix.
+4. **Repeatable processes** → Sales→delivery handoff, client onboarding, monthly reporting, resourcing/capacity planning, OOO coverage, time-logging, and an **EOS/Traction "Weekly Pod Meeting"** (scorecard + IDS issues + health flags). Playbook §4.
+5. **Account management** → A **pod/team model** under Account Directors, tracked against a **"master account list,"** with a formal **Transition List** SOP and per-client **weekly scorecards**/health flags. Playbook §5, `collaboration.md`, appendix.
 
 ## Team collaboration — headline
 
