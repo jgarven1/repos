@@ -123,9 +123,15 @@ The first time you run it, it prints a **sign-in link**. Here's exactly what to 
 5. Go back to the Colab cell and **paste that whole address** where it asks,
    then press Enter.
 
-### Step 10: Pick your export and wait
-- It lists the exports in your matter. Type the **number** of the one you want
-  and press Enter.
+### Step 10: Pick your export(s) and wait
+- It lists the exports in your matter, each with a number.
+- You can pick **one or many**:
+  - a single one: `2`
+  - several: `1,3,4`
+  - a range: `2-5`
+  - everything: type `all`
+- If you pick more than one, each export gets its **own subfolder** inside your
+  Drive folder, so nothing gets mixed up or overwritten.
 - Watch the download/upload progress. When it says **All done!**, open Drive
   and look for the **Vault Export** folder.
 

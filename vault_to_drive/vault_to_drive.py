@@ -144,8 +144,8 @@ def sign_in(force_paste=False):
     return creds
 
 
-def pick_export(vault, matter_id):
-    """Show the exports inside a matter and let the user choose one."""
+def pick_exports(vault, matter_id):
+    """Show the exports inside a matter and let the user choose one or more."""
     print(f"\nLooking up exports in matter {matter_id} ...")
     exports = []
     page_token = None
@@ -175,27 +175,71 @@ def pick_export(vault, matter_id):
         print(f"  [{i}] {ex.get('name')}   (status: {status})")
 
     while True:
-        choice = input("\nType the number of the export you want: ").strip()
-        if choice.isdigit() and 1 <= int(choice) <= len(exports):
-            chosen = exports[int(choice) - 1]
-            break
-        print("Please type one of the numbers shown above.")
+        choice = input(
+            "\nType the number(s) you want. You can pick several with commas "
+            "(e.g. 1,3,4), a range (e.g. 2-5), or type 'all': "
+        ).strip().lower()
 
-    if chosen.get("status") != "COMPLETED":
-        print(
-            f"\nHeads up: this export's status is '{chosen.get('status')}', not "
-            "COMPLETED. If it isn't finished, wait and try again."
-        )
+        picked = _parse_selection(choice, len(exports))
+        if picked:
+            break
+        print("Please type valid numbers from the list above (e.g. 1,3 or 2-5 or all).")
+
+    chosen = [exports[i - 1] for i in picked]
+
+    for ex in chosen:
+        if ex.get("status") != "COMPLETED":
+            print(
+                f"\nHeads up: export '{ex.get('name')}' has status "
+                f"'{ex.get('status')}', not COMPLETED. If it isn't finished, its "
+                "files may be missing; you can wait and run again."
+            )
     return chosen
 
 
-def get_or_create_drive_folder(drive, folder_name):
-    """Find a Drive folder by name, or make one, and return its ID."""
+def _parse_selection(text, count):
+    """Turn '1,3,4' / '2-5' / 'all' into a sorted list of valid 1-based indexes."""
+    if text == "all":
+        return list(range(1, count + 1))
+
+    chosen = set()
+    for part in text.replace(" ", "").split(","):
+        if not part:
+            continue
+        if "-" in part:  # a range like 2-5
+            bits = part.split("-")
+            if len(bits) != 2 or not (bits[0].isdigit() and bits[1].isdigit()):
+                return []
+            start, end = int(bits[0]), int(bits[1])
+            if start > end:
+                start, end = end, start
+            for n in range(start, end + 1):
+                if not 1 <= n <= count:
+                    return []
+                chosen.add(n)
+        elif part.isdigit():  # a single number
+            n = int(part)
+            if not 1 <= n <= count:
+                return []
+            chosen.add(n)
+        else:
+            return []
+    return sorted(chosen)
+
+
+def get_or_create_drive_folder(drive, folder_name, parent_id=None):
+    """Find a Drive folder by name, or make one, and return its ID.
+
+    If parent_id is given, we look for / create the folder INSIDE that parent,
+    so we can nest one folder per export under a single top-level folder.
+    """
     safe_name = folder_name.replace("'", "\\'")
     query = (
         "mimeType='application/vnd.google-apps.folder' "
         f"and name='{safe_name}' and trashed=false"
     )
+    if parent_id:
+        query += f" and '{parent_id}' in parents"
     hits = (
         drive.files()
         .list(q=query, fields="files(id,name)", pageSize=1)
@@ -206,17 +250,10 @@ def get_or_create_drive_folder(drive, folder_name):
         print(f"Using existing Drive folder '{folder_name}'.")
         return hits[0]["id"]
 
-    folder = (
-        drive.files()
-        .create(
-            body={
-                "name": folder_name,
-                "mimeType": "application/vnd.google-apps.folder",
-            },
-            fields="id",
-        )
-        .execute()
-    )
+    body = {"name": folder_name, "mimeType": "application/vnd.google-apps.folder"}
+    if parent_id:
+        body["parents"] = [parent_id]
+    folder = drive.files().create(body=body, fields="id").execute()
     print(f"Created a new Drive folder '{folder_name}'.")
     return folder["id"]
 
@@ -302,25 +339,43 @@ def main():
     storage = build("storage", "v1", credentials=creds)
     drive = build("drive", "v3", credentials=creds)
 
-    chosen = pick_export(vault, matter_id)
-    sink = chosen.get("cloudStorageSink", {})
-    files = sink.get("files", [])
-    if not files:
-        raise SystemExit(
-            "That export has no files listed yet. If it just finished, wait a "
-            "moment and run again."
-        )
+    chosen_exports = pick_exports(vault, matter_id)
 
-    folder_id = get_or_create_drive_folder(drive, drive_folder)
+    # The top-level folder that holds everything.
+    top_folder_id = get_or_create_drive_folder(drive, drive_folder)
 
-    print(f"\nTransferring {len(files)} file(s) into Drive folder '{drive_folder}'...")
-    for sink_file in files:
-        transfer_one_file(storage, drive, sink_file, folder_id)
+    total_files = 0
+    skipped = []
+    for export in chosen_exports:
+        name = export.get("name", "export")
+        files = export.get("cloudStorageSink", {}).get("files", [])
+        if not files:
+            print(f"\nSkipping '{name}': no files listed yet (maybe still finishing).")
+            skipped.append(name)
+            continue
+
+        # When more than one export is chosen, give each its own subfolder so
+        # files never overwrite each other. With a single export, put files
+        # directly in the top folder.
+        if len(chosen_exports) > 1:
+            dest_id = get_or_create_drive_folder(drive, name, parent_id=top_folder_id)
+            where = f"{drive_folder}/{name}"
+        else:
+            dest_id = top_folder_id
+            where = drive_folder
+
+        print(f"\nTransferring {len(files)} file(s) from '{name}' into '{where}'...")
+        for sink_file in files:
+            transfer_one_file(storage, drive, sink_file, dest_id)
+            total_files += 1
 
     print(
-        f"\nAll done! {len(files)} file(s) are now in your Drive folder "
-        f"'{drive_folder}'. Nothing was saved to your own computer."
+        f"\nAll done! {total_files} file(s) from {len(chosen_exports)} export(s) "
+        f"are now in your Drive folder '{drive_folder}'. Nothing was saved to "
+        "your own computer."
     )
+    if skipped:
+        print("Skipped (no files ready yet): " + ", ".join(skipped))
 
 
 if __name__ == "__main__":
