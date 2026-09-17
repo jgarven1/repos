@@ -1,0 +1,4 @@
+# Never commit your Google credentials or saved login.
+client_secret.json
+token.json
+*.json
