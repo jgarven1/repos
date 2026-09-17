@@ -108,12 +108,24 @@ then press ▶:
     --drive-folder "Vault Export"
 ```
 
-### Step 9: Sign in and pick your export
-- The first time, it prints a link (or opens a sign-in). Click it, choose your
-  Google account, and allow the permissions. If it shows a code, copy it back
-  into the cell when asked.
-- It then lists the exports in your matter. Type the **number** of the one you
-  want and press Enter.
+### Step 9: Sign in (the copy-the-address method)
+The first time you run it, it prints a **sign-in link**. Here's exactly what to do:
+1. **Copy the link** it prints and open it in a **new browser tab**.
+2. Choose your Google account and click **Allow** to approve the permissions.
+   - If you see a warning that the app "isn't verified," click **Advanced**,
+     then **Go to (your app name)**. This is safe: it's your own app that you
+     created in Part A.
+3. Your browser will then try to open a page that starts with
+   **`http://localhost`** and show an error like **"This site can't be
+   reached."** *This is normal and expected.* Nothing is broken.
+4. **Copy the entire address** from your browser's address bar (it looks like
+   `http://localhost/?code=4/0Ab...&scope=...`).
+5. Go back to the Colab cell and **paste that whole address** where it asks,
+   then press Enter.
+
+### Step 10: Pick your export and wait
+- It lists the exports in your matter. Type the **number** of the one you want
+  and press Enter.
 - Watch the download/upload progress. When it says **All done!**, open Drive
   and look for the **Vault Export** folder.
 
@@ -152,8 +164,16 @@ python vault_to_drive.py --matter-id 3cf11af8-e562-40a7-af21-0de0dd0db91a --driv
 
 - **"I can't find client_secret.json"** → You didn't upload it (Step 7) or it's
   named differently. It must be exactly `client_secret.json`.
+- **"Access blocked: Authorization Error ... response_type is missing"** →
+  This is the old sign-in method that Google turned off. The current version of
+  the tool uses the copy-the-address method in Step 9 instead, so make sure
+  you're running the latest `vault_to_drive.py`. If it still tries the wrong
+  way, add `--paste-auth` to the command in Step 8 to force the new method.
 - **"Access blocked" / "app not verified"** → Add your email as a **Test user**
-  in Step 3, or use the **Internal** consent option.
+  in Step 3, or use the **Internal** consent option. On the warning page, click
+  **Advanced → Go to (your app)**; it's your own app, so it's safe.
+- **The `http://localhost` page won't load** → That's expected. You don't need
+  it to load. Just copy the address from the address bar and paste it back.
 - **"insufficient permission" or 403** → The account you signed in with isn't a
   Vault admin, or one of the three APIs in Step 2 isn't enabled.
 - **The export list is empty** → Create and finish an export in Vault first

@@ -24,7 +24,9 @@ after that (token.json).
 
 import argparse
 import os
+import sys
 import tempfile
+from urllib.parse import urlparse, parse_qs
 
 # Google auth + API client libraries. Installed via requirements.txt.
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -56,11 +58,61 @@ TOKEN_FILE = os.environ.get("TOKEN_FILE", "token.json")
 CHUNK_SIZE = 8 * 1024 * 1024
 
 
-def sign_in():
+def _running_in_colab():
+    """True when this is running inside a Google Colab notebook.
+
+    We check several signals because when the notebook runs us with
+    `!python vault_to_drive.py`, this is a separate process that can't see the
+    Colab Python module directly. The environment variable and the /content
+    folder are inherited by that process, so they're reliable.
+    """
+    return bool(
+        "google.colab" in sys.modules
+        or os.environ.get("COLAB_RELEASE_TAG")
+        or os.environ.get("COLAB_GPU")
+        or os.path.isdir("/content")
+    )
+
+
+def _sign_in_by_paste(flow):
+    """Colab-friendly sign-in: show a link, you approve, you paste it back.
+
+    Google turned off the old "copy this code" method in 2023, so instead we
+    send you to a normal Google sign-in page. After you approve, your browser
+    tries to open an address starting with http://localhost that WON'T load
+    (that's expected and fine). Copy that whole address from the address bar
+    and paste it here. It contains the one-time code we need.
+    """
+    # Loopback (http://localhost) is always allowed for a "Desktop app" OAuth
+    # client, so this needs no extra setup in the Cloud Console.
+    flow.redirect_uri = "http://localhost"
+    auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
+
+    print("\n" + "=" * 70)
+    print("STEP 1: Open this link in a new browser tab and sign in / approve:\n")
+    print(auth_url)
+    print(
+        "\nSTEP 2: Your browser will then try to open a page starting with\n"
+        "        http://localhost and show an error like 'can't be reached'.\n"
+        "        THAT IS NORMAL. Copy the FULL address from the address bar."
+    )
+    print("=" * 70)
+    pasted = input("\nPaste that full http://localhost... address here: ").strip()
+
+    # Accept either the whole redirected URL or just the bare code.
+    code = pasted
+    if "code=" in pasted:
+        code = parse_qs(urlparse(pasted).query).get("code", [pasted])[0]
+
+    flow.fetch_token(code=code)
+    return flow.credentials
+
+
+def sign_in(force_paste=False):
     """Log in to Google and return credentials we can reuse.
 
-    The first run opens a browser/consent step. After that we reuse the saved
-    token so you are not asked again (until it expires, when we refresh it).
+    The first run needs one sign-in step. After that we reuse the saved token
+    so you are not asked again (until it expires, when we refresh it).
     """
     creds = None
     if os.path.exists(TOKEN_FILE):
@@ -77,12 +129,14 @@ def sign_in():
                     "Google Cloud Console, then put it next to this script.\n"
                 )
             flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES)
-            # run_local_server opens a browser when possible; in Colab we fall
-            # back to the console flow automatically (it prints a link).
-            try:
+            if force_paste or _running_in_colab():
+                # In Colab there is no local browser we can hand off to, so we
+                # use the copy-the-address method.
+                creds = _sign_in_by_paste(flow)
+            else:
+                # On a normal computer this pops open your browser and captures
+                # the response automatically.
                 creds = flow.run_local_server(port=0)
-            except Exception:
-                creds = flow.run_console()
         with open(TOKEN_FILE, "w") as f:
             f.write(creds.to_json())
         print("Signed in and saved your login to", TOKEN_FILE)
@@ -227,6 +281,11 @@ def main():
         "--drive-folder",
         help="Name of the Drive folder to put the files in (created if missing).",
     )
+    parser.add_argument(
+        "--paste-auth",
+        action="store_true",
+        help="Force the copy-the-address sign-in method (use if auto-detect fails).",
+    )
     args = parser.parse_args()
 
     matter_id = args.matter_id or input("Paste your Vault matter ID: ").strip()
@@ -236,7 +295,7 @@ def main():
         or "Vault Export"
     )
 
-    creds = sign_in()
+    creds = sign_in(force_paste=args.paste_auth)
 
     # Build the three service "clients" we talk to.
     vault = build("vault", "v1", credentials=creds)
